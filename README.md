@@ -21,6 +21,8 @@ Comme tous les autres outils non-officiels et respectant les CGU, cet outil est 
 * lorsque l’ordre d’initiative change régulièrement
 * éviter de devoir réorganiser les fenêtres manuellement
 
+**Mais aussi...**
+* Pour les personnes en situation de handicap
 ---
 
 # Installation
