@@ -44,14 +44,16 @@ Comme tous les autres outils non-officiels et respectant les CGU, cet outil est 
 
 # FAQ
 
-**Windows me demande si je fais confiance à le logiciel**
+* **Windows me demande si je fais confiance à le logiciel**
 
 Dracoon permettant de modifier le comportement de votre clavier (touche de raccourcis) il est normal que Windows ajoute une sécurité supplémentaire. Le comportement de Windows est le même sur d'autres outils.
 
-**L'auto-focus ne fonctionne pas**
+* **L'auto-focus ne fonctionne pas**
+* 
 Vous pouvez afficher le mode "debug" dans l'onglet d'auto-focus. Ensuite faite un échange entre vos personnages et vérifie si la notification est bien affichée dans les logs. SI ce n'est pas le cas, c'est que les notifications ne sont pas bien activée sur votre ordinateur.
 
-**Ce programme est-il autorisé par Ankama ?**
+* **Ce programme est-il autorisé par Ankama ?**
+
 Petit rappel de la part d'Ankama concernant les règles fixée autour des outils fan-made : *"L'utilisation d'un logiciel tiers est tolérée UNIQUEMENT s'il ne modifie/n'interagit pas avec les fichiers du jeu ou le jeu en lui-même. Ne s'agissant pas d'un outil officiellement pris en charge par Ankama, nous vous rappelons que nous ne pouvons pas garantir la sécurité du logiciel et que son utilisation peut comporter des risques. En cas d'éventuelles violations de données ou de logs, le joueur sera tenu responsable.Il est également important de distinguer un outil de gestion de fenêtre d'autres outils tiers comme les macros, ces dernières sont strictement interdites.."*
 
 ---
