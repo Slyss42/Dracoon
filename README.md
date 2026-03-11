@@ -29,7 +29,7 @@ Comme tous les autres outils non-officiels et respectant les CGU, cet outil est 
 2. Lancer le fichier `.exe`.
 3. Activer les notifications sur vos comptes Dofus (option en jeu > général > notification en arrière plan)
 
-[image alt](https://github.com/Slyss42/Dracoon/blob/870bcb80c08f91d18c7bfe1a981e38dc6da308d1/activer-notification-ig.png)
+![image alt](https://github.com/Slyss42/Dracoon/blob/870bcb80c08f91d18c7bfe1a981e38dc6da308d1/activer-notification-ig.png)
 
 ---
 
