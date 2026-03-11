@@ -5,7 +5,8 @@ Dracoon est un outil ayant pour but de faciliter et automatiser la gestion des f
 Le programme **intègre les fonctionnalités déjà connues** par une grande partie de joueur (tri des comptes selon l'ordre d'initiative, compte suivant/précédent via une touche...) et **ajoute un système d’Auto-Focus**.
 
 Vidéo de présentation :
-[!(https://github.com/Slyss42/Dracoon/blob/4cf59d33ab03a9f8568ab6c3938f918b69737c58/youtube-miniature.png)](https://youtu.be/6R7pPM_5euM)
+
+[(https://github.com/Slyss42/Dracoon/blob/4cf59d33ab03a9f8568ab6c3938f918b69737c58/youtube-miniature.png)](https://youtu.be/6R7pPM_5euM)
 
 ---
 
