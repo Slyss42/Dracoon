@@ -29,7 +29,7 @@ Le programme **intègre les fonctionnalités déjà connues** par une grande par
 2. Lancer le fichier `.exe`.
 3. Activer les notifications sur vos comptes Dofus (option en jeu > général > notification en arrière plan)
 
-![Image](https://github.com/Slyss42/Dracoon/blob/46b5f9711967baa45749e804de905726fff89c6a/activer-notification-ig.png)
+[Image](https://github.com/Slyss42/Dracoon/blob/46b5f9711967baa45749e804de905726fff89c6a/activer-notification-ig.png)
 
 4. Activer les notifications Windows (Paramètre > Système > Actions et notifications > "activer"
 5. Désactiver "autoriser les notifications à émettre des sons" (ou le faire spécifiquement pour Dofus si vous voulez garder le son pour les autres applications)
