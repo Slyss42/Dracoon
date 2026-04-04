@@ -6,6 +6,7 @@ import os
 import re
 import sys
 import threading
+import time
 import tkinter as tk
 import webbrowser
 import winreg
@@ -147,7 +148,6 @@ def set_window_app_id(hwnd: int, app_id: str | None) -> bool:
 
 
 def reorder_with_ungroup_regroup(hwnds: list[int], log_fn=None):
-    import time
     # 1. Dégrouper
     for i, hwnd in enumerate(hwnds):
         ok = set_window_app_id(hwnd, f"DofusRetro.Char.{hwnd}")
@@ -201,6 +201,10 @@ def focus_window(hwnd: int) -> tuple[bool, str]:
         win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
         try:
             win32gui.SetForegroundWindow(hwnd)
+            win32gui.BringWindowToTop(hwnd)
+            # Laisser Windows finaliser le changement de focus avant de
+            # relâcher Alt, sinon le focus peut revenir à la fenêtre d'origine.
+            time.sleep(0.03)
         finally:
             win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
         return True, title
@@ -1255,36 +1259,39 @@ class App(tk.Tk):
             return
         if not self._char_main:
             return
-        if WIN32_OK:
-            try:
-                fg = win32gui.GetForegroundWindow()
-                if fg:
-                    self._prev_hwnd = fg
-            except Exception:
-                pass
-        focus_dofus_window(self._char_main)
+        def _do():
+            if WIN32_OK:
+                try:
+                    fg = win32gui.GetForegroundWindow()
+                    if fg:
+                        self._prev_hwnd = fg
+                except Exception:
+                    pass
+            focus_dofus_window(self._char_main)
+        threading.Thread(target=_do, daemon=True).start()
 
     def _focus_next(self):
         if is_dofus_foreground():
-            self._cycle(+1)
+            threading.Thread(target=self._cycle, args=(+1,), daemon=True).start()
 
     def _focus_prev(self):
         if is_dofus_foreground():
-            self._cycle(-1)
+            threading.Thread(target=self._cycle, args=(-1,), daemon=True).start()
 
     def _focus_back(self):
         """Retour direct à la fenêtre active avant le dernier switch."""
         if not is_dofus_foreground():
             return
-        if self._prev_hwnd and WIN32_OK:
-            try:
-                if win32gui.IsWindow(self._prev_hwnd):
-                    focus_window(self._prev_hwnd)
-                    return
-            except Exception:
-                pass
-        # Fallback : cycle -1
-        self._cycle(-1)
+        def _do():
+            if self._prev_hwnd and WIN32_OK:
+                try:
+                    if win32gui.IsWindow(self._prev_hwnd):
+                        focus_window(self._prev_hwnd)
+                        return
+                except Exception:
+                    pass
+            self._cycle(-1)
+        threading.Thread(target=_do, daemon=True).start()
 
     def _cycle(self, direction: int):
         if not self._char_order:
