@@ -159,6 +159,11 @@ class App(tk.Tk):
             cfg.get("char_af_overrides", "")
         )
 
+        _raw_order = cfg.get("char_order", "")
+        self._saved_pseudo_order: list[str] = (
+            [p.strip() for p in _raw_order.split(",") if p.strip()] if _raw_order else []
+        )
+
         self._prev_hwnd: int | None = None
 
         _raw_skip = cfg.get("char_skip_names", "[]") or "[]"
@@ -525,14 +530,18 @@ class App(tk.Tk):
     def refresh_characters(self):
         if not WIN32_OK:
             return
-        windows   = get_dofus_windows()
-        win_map   = {h: p for h, p in windows}
-        known     = set(win_map.keys())
-        new_order = [(h, win_map[h]) for h, _ in self._char_order if h in known]
-        existing  = {h for h, _ in new_order}
+        windows    = get_dofus_windows()
+        win_map    = {h: p for h, p in windows}
+        known      = set(win_map.keys())
+        first_load = not self._char_order
+        new_order  = [(h, win_map[h]) for h, _ in self._char_order if h in known]
+        existing   = {h for h, _ in new_order}
         for h, p in windows:
             if h not in existing:
                 new_order.append((h, p))
+        if first_load and self._saved_pseudo_order:
+            rank = {p: i for i, p in enumerate(self._saved_pseudo_order)}
+            new_order.sort(key=lambda x: rank.get(x[1], len(self._saved_pseudo_order)))
         self._char_order = new_order
         self._rebuild_char_list()
         if hasattr(self, "_af_chars_container"):
@@ -642,6 +651,11 @@ class App(tk.Tk):
         if self._drag_idx is not None:
             self._drag_idx = None
             self._rebuild_char_list()
+            self._persist_char_order()
+
+    def _persist_char_order(self):
+        self._saved_pseudo_order = [p for _, p in self._char_order]
+        self._persist_config()
 
     def _save_order(self):
         if not self._char_order:
@@ -872,6 +886,7 @@ class App(tk.Tk):
             self._welcome_shown, self._char_skip_names,
             self.remove_notif_var.get(),
             self.maximize_on_launch_var.get(),
+            self._saved_pseudo_order,
         ))
 
     # ── Gestion des exclusions de roulement ───────────────────────────────────
@@ -1223,6 +1238,8 @@ class App(tk.Tk):
         pass
 
     def _run_async_loop(self):
+        import ctypes
+        ctypes.windll.ole32.CoInitializeEx(None, 0x2)  # COINIT_APARTMENTTHREADED
         self._loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self._loop)
         try:
@@ -1231,6 +1248,7 @@ class App(tk.Tk):
             self.after(0, self.log_msg, f"Erreur fatale : {e}", "error")
         finally:
             self._loop.close()
+            ctypes.windll.ole32.CoUninitialize()
 
     async def _listen(self):
         listener = winman.UserNotificationListener.current

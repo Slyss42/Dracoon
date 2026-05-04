@@ -23,6 +23,8 @@ import time
 import sys as _sys
 if getattr(_sys, "frozen", False):
     ICON_PATH = os.path.join(_sys._MEIPASS, "icon.ico")
+    _log_path = os.path.join(os.path.dirname(_sys.executable), "dracoon.log")
+    _sys.stderr = open(_log_path, "w", buffering=1, encoding="utf-8")
 else:
     ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
 
@@ -364,7 +366,8 @@ def _unhook_all():
 def _build_config(shortcut_next, shortcut_prev, shortcut_back,
                   char_af_overrides=None, shortcut_main=None, char_main=None,
                   welcome_shown=False, char_skip_names=None,
-                  remove_notif=False, maximize_on_launch=True) -> dict:    
+                  remove_notif=False, maximize_on_launch=True,
+                  char_order=None) -> dict:
     return {
         "shortcut_next":     shortcut_next,
         "shortcut_prev":     shortcut_prev,
@@ -376,7 +379,8 @@ def _build_config(shortcut_next, shortcut_prev, shortcut_back,
         "char_skip_names":   json.dumps(sorted(char_skip_names), ensure_ascii=False)
                              if char_skip_names else "[]",
         "remove_notif":        "1" if remove_notif else "0",
-        "maximize_on_launch":  "1" if maximize_on_launch else "0",                     
+        "maximize_on_launch":  "1" if maximize_on_launch else "0",
+        "char_order":          ",".join(char_order) if char_order else "",
     }
 
 
