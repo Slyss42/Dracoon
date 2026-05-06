@@ -9,6 +9,7 @@ from logic import (
     LOADING_PATTERN, WIN32_OK, WINSDK_OK, KEYBOARD_OK, TRAY_OK,
     ICON_PATH, TITLE_PATTERN, NOTIF_TYPES,
     APP_VERSION, APP_GITHUB, APP_TWITTER, APP_LEGAL,
+    LOG_PATH, setup_file_logger,
     get_dofus_windows, focus_window, focus_dofus_window,
     list_dofus_windows, is_dofus_foreground,
     reorder_with_ungroup_regroup,
@@ -18,7 +19,9 @@ from logic import (
     extract_pseudo_from_title, _is_dofus_pid,
 )
 import json
+import logging
 import os
+import sys
 
 try:
     import win32gui, win32con, win32api, win32process
@@ -41,6 +44,35 @@ try:
     from PIL import Image, ImageDraw
 except Exception:
     pass
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# LOGGING / EXCEPTHOOKS
+# ══════════════════════════════════════════════════════════════════════════════
+
+_TAG_TO_LEVEL = {
+    "info":  logging.INFO,
+    "ok":    logging.INFO,
+    "warn":  logging.WARNING,
+    "error": logging.ERROR,
+    "dim":   logging.DEBUG,
+    "debug": logging.DEBUG,
+    "time":  logging.INFO,
+}
+
+
+def _install_excepthooks(logger: logging.Logger):
+    def _hook(exc_type, exc, tb):
+        logger.error("Uncaught exception", exc_info=(exc_type, exc, tb))
+    sys.excepthook = _hook
+    try:
+        def _thook(args):
+            name = args.thread.name if args.thread else "?"
+            logger.error("Uncaught exception in thread %s", name,
+                         exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+        threading.excepthook = _thook
+    except Exception:
+        pass
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -122,6 +154,9 @@ class App(tk.Tk):
 
     def __init__(self):
         super().__init__()
+        self._logger = setup_file_logger()
+        _install_excepthooks(self._logger)
+        self._logger.info("Dracoon %s — démarrage", APP_VERSION)
         self.title("Dracoon - Gestionnaire de fenêtres Dofus Rétro")
         self.configure(bg=self.BG)
         self.resizable(True, True)
@@ -779,15 +814,27 @@ class App(tk.Tk):
 
         entry.bind("<KeyPress>", on_key)
 
+    def _safe_hotkey(self, fn, name: str):
+        def wrapper():
+            try:
+                fn()
+            except Exception:
+                self._logger.exception("Erreur dans le callback raccourci %s", name)
+        return wrapper
+
     def _apply_shortcuts(self, silent: bool = False):
         if not KEYBOARD_OK:
             return
         try:
             _unhook_all()
-            if self._shortcut_next: keyboard.add_hotkey(self._shortcut_next, self._focus_next)
-            if self._shortcut_prev: keyboard.add_hotkey(self._shortcut_prev, self._focus_prev)
-            if self._shortcut_back: keyboard.add_hotkey(self._shortcut_back, self._focus_back)
-            if self._shortcut_main: keyboard.add_hotkey(self._shortcut_main, self._focus_main)
+            if self._shortcut_next:
+                keyboard.add_hotkey(self._shortcut_next, self._safe_hotkey(self._focus_next, "next"))
+            if self._shortcut_prev:
+                keyboard.add_hotkey(self._shortcut_prev, self._safe_hotkey(self._focus_prev, "prev"))
+            if self._shortcut_back:
+                keyboard.add_hotkey(self._shortcut_back, self._safe_hotkey(self._focus_back, "back"))
+            if self._shortcut_main:
+                keyboard.add_hotkey(self._shortcut_main, self._safe_hotkey(self._focus_main, "main"))
             self._persist_config()
         except Exception as e:
             if not silent:
@@ -1156,11 +1203,19 @@ class App(tk.Tk):
 
     def log_msg(self, msg: str, tag: str = "info"):
         ts = datetime.now().strftime("%H:%M:%S")
-        self.log.configure(state="normal")
-        self.log.insert("end", f"[{ts}] ", "time")
-        self.log.insert("end", msg + "\n", tag)
-        self.log.see("end")
-        self.log.configure(state="disabled")
+        try:
+            self.log.configure(state="normal")
+            self.log.insert("end", f"[{ts}] ", "time")
+            self.log.insert("end", msg + "\n", tag)
+            self.log.see("end")
+            self.log.configure(state="disabled")
+        except Exception:
+            pass
+        level = _TAG_TO_LEVEL.get(tag, logging.INFO) if not tag.startswith("type_") else logging.INFO
+        try:
+            self._logger.log(level, msg)
+        except Exception:
+            pass
 
     def _clear_log(self):
         self.log.configure(state="normal")
@@ -1496,6 +1551,22 @@ class App(tk.Tk):
 
         _link_row(card_links, "⌨", "GitHub : https://github.com/Slyss42/Dracoon", APP_GITHUB)
         _link_row(card_links, "🐦", "Twitter/X : https://x.com/Slyss42", APP_TWITTER)
+
+        card_log = tk.Frame(f, bg=self.CARD, padx=16, pady=12)
+        card_log.pack(fill="x", padx=16, pady=2)
+        tk.Label(card_log, text="Fichier de log", bg=self.CARD,
+                 fg=self.GRAY, font=self.S.Info.font).pack(anchor="w", pady=(0, 6))
+        tk.Label(card_log, text=LOG_PATH, bg=self.CARD,
+                 fg=self.TEXT, font=("Consolas", 10),
+                 justify="left", wraplength=620).pack(anchor="w", pady=(0, 8))
+        tk.Button(card_log, text="📂  Ouvrir le dossier",
+                  bg="#252b3b", fg=self.ACCENT,
+                  relief="flat", cursor="hand2",
+                  font=self.S.Bouton.font_petit,
+                  padx=self.S.Bouton.padx_petit, pady=self.S.Bouton.pady_petit,
+                  activebackground="#252b3b", activeforeground=self.ACCENT,
+                  command=lambda: os.startfile(os.path.dirname(LOG_PATH))
+                  ).pack(anchor="w")
 
         card_legal = tk.Frame(f, bg=self.CARD, padx=16, pady=12)
         card_legal.pack(fill="x", padx=16, pady=2)

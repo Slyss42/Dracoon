@@ -1,11 +1,13 @@
 import ctypes
 import ctypes.wintypes as wt
 import json
+import logging
 import os
 import re
 import sys
 import time
 import winreg
+from logging.handlers import RotatingFileHandler
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -17,6 +19,34 @@ if getattr(sys, "frozen", False):
     ICON_PATH = os.path.join(sys._MEIPASS, "icon.ico")
 else:
     ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
+
+# ─── Fichier de log ───────────────────────────────────────────────────────────
+def _log_dir() -> str:
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    d = os.path.join(base, "Dracoon")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except Exception:
+        pass
+    return d
+
+LOG_PATH = os.path.join(_log_dir(), "dracoon.log")
+
+def setup_file_logger() -> logging.Logger:
+    logger = logging.getLogger("dracoon")
+    if logger.handlers:
+        return logger
+    logger.setLevel(logging.DEBUG)
+    logger.propagate = False
+    try:
+        h = RotatingFileHandler(LOG_PATH, maxBytes=5 * 1024 * 1024,
+                                backupCount=3, encoding="utf-8")
+        h.setFormatter(logging.Formatter(
+            "%(asctime)s %(levelname)s [%(threadName)s] %(message)s"))
+        logger.addHandler(h)
+    except Exception:
+        pass
+    return logger
 
 # ─── Dépendances optionnelles ─────────────────────────────────────────────────
 try:
