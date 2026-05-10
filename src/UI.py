@@ -1433,10 +1433,11 @@ class App(tk.Tk):
                                 self.after(0, self.log_msg, f"  ✓ Focus : {detail}", "ok")
                             else:
                                 self.after(0, self.log_msg, f"  ✗ {detail}", "error")
-                                wins = list_dofus_windows()
-                                for w in wins:
-                                    self.after(0, self.log_msg,
-                                        f"    Fenêtre dispo : {repr(w)}", "debug")
+                                if self.debug_var.get():
+                                    wins = list_dofus_windows()
+                                    for w in wins:
+                                        self.after(0, self.log_msg,
+                                            f"    Fenêtre dispo : {repr(w)}", "debug")
 
                         except Exception as e:
                             if self.debug_var.get():

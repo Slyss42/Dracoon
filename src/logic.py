@@ -290,17 +290,61 @@ def get_dofus_windows() -> list[tuple[int, str]]:
     return result
 
 
+def _try_set_foreground(hwnd: int) -> bool:
+    try:
+        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
+        try:
+            win32gui.SetForegroundWindow(hwnd)
+            return True
+        finally:
+            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
+    except Exception:
+        return False
+
+
+def _attach_and_set_foreground(hwnd: int) -> bool:
+    # Fallback when SetForegroundWindow is silently denied by Windows focus-stealing
+    # prevention: temporarily attach our input queue to the current foreground thread.
+    try:
+        user32   = ctypes.windll.user32
+        kernel32 = ctypes.windll.kernel32
+        fg = win32gui.GetForegroundWindow()
+        if not fg:
+            return False
+        fg_tid     = win32process.GetWindowThreadProcessId(fg)[0]
+        target_tid = win32process.GetWindowThreadProcessId(hwnd)[0]
+        cur_tid    = kernel32.GetCurrentThreadId()
+        attached_fg = attached_target = False
+        try:
+            if fg_tid and fg_tid != cur_tid:
+                attached_fg = bool(user32.AttachThreadInput(cur_tid, fg_tid, True))
+            if target_tid and target_tid != cur_tid and target_tid != fg_tid:
+                attached_target = bool(user32.AttachThreadInput(cur_tid, target_tid, True))
+            user32.BringWindowToTop(hwnd)
+            try:
+                win32gui.SetForegroundWindow(hwnd)
+                return True
+            except Exception:
+                return False
+        finally:
+            if attached_fg:
+                user32.AttachThreadInput(cur_tid, fg_tid, False)
+            if attached_target:
+                user32.AttachThreadInput(cur_tid, target_tid, False)
+    except Exception:
+        return False
+
+
 def focus_window(hwnd: int) -> tuple[bool, str]:
     try:
         title = win32gui.GetWindowText(hwnd)
         if win32gui.IsIconic(hwnd):
             win32gui.ShowWindow(hwnd, win32con.SW_RESTORE)
-        win32api.keybd_event(win32con.VK_MENU, 0, 0, 0)
-        try:
-            win32gui.SetForegroundWindow(hwnd)
-        finally:
-            win32api.keybd_event(win32con.VK_MENU, 0, win32con.KEYEVENTF_KEYUP, 0)
-        return True, title
+        if _try_set_foreground(hwnd):
+            return True, title
+        if _attach_and_set_foreground(hwnd):
+            return True, title
+        return False, f"focus refusé par Windows (hwnd={hwnd})"
     except Exception as e:
         return False, str(e)
 
