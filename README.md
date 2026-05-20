@@ -28,7 +28,7 @@ Vidéo de présentation :
 ---
 
 # Pré-requis
-* Autorisé les applications à accéder à vos notifications (Paramètre > Confidentialité > Notifications > "activer")
+* Autorisé les applications à accéder à vos notifications (Paramètre > Confidentialité > Notifications > "activer")  [screen](https://github.com/Slyss42/Dracoon/blob/f2e668830b0f250211360b09da4b0d9b2b68c9e7/.github/activer-notification-autorisation.png)
 * Activer les notifications sur vos comptes Dofus (option en jeu > général > notification en arrière plan) [screen](https://github.com/Slyss42/Dracoon/blob/46b5f9711967baa45749e804de905726fff89c6a/activer-notification-ig.png)
 * Activer les notifications Windows (Paramètre > Système > Actions et notifications > "activer")
 
