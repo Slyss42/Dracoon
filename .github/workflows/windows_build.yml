@@ -47,7 +47,32 @@ jobs:
           --hidden-import PIL.ImageTk `
           --hidden-import keyboard `
           --hidden-import psutil `
-          --collect-all PyQt6 `
+          --hidden-import PyQt6 `
+          --hidden-import PyQt6.QtWidgets `
+          --hidden-import PyQt6.QtCore `
+          --hidden-import PyQt6.QtGui `
+          --exclude-module PyQt6.QtWebEngine `
+          --exclude-module PyQt6.QtWebEngineCore `
+          --exclude-module PyQt6.QtWebEngineWidgets `
+          --exclude-module PyQt6.Qt3D `
+          --exclude-module PyQt6.QtMultimedia `
+          --exclude-module PyQt6.QtNetwork `
+          --exclude-module PyQt6.QtSql `
+          --exclude-module PyQt6.QtSvg `
+          --exclude-module PyQt6.QtQml `
+          --exclude-module PyQt6.QtQuick `
+          --exclude-module PyQt6.QtBluetooth `
+          --exclude-module PyQt6.QtDBus `
+          --exclude-module PyQt6.QtDesigner `
+          --exclude-module PyQt6.QtHelp `
+          --exclude-module PyQt6.QtOpenGL `
+          --exclude-module PyQt6.QtPdf `
+          --exclude-module PyQt6.QtPositioning `
+          --exclude-module PyQt6.QtRemoteObjects `
+          --exclude-module PyQt6.QtSensors `
+          --exclude-module PyQt6.QtSerialPort `
+          --exclude-module PyQt6.QtTest `
+          --exclude-module PyQt6.QtXml `
           src/main.py
 
       - name: Upload Artifact
