@@ -6,10 +6,8 @@ import os
 import re
 import sys
 import threading
-import tkinter as tk
 import webbrowser
 import winreg
-from tkinter import scrolledtext
 from datetime import datetime
 import psutil
 import time
@@ -23,6 +21,8 @@ import time
 import sys as _sys
 if getattr(_sys, "frozen", False):
     ICON_PATH = os.path.join(_sys._MEIPASS, "icon.ico")
+    #_log_path = os.path.join(os.path.dirname(_sys.executable), "dracoon.log")  # +
+    #_sys.stderr = open(_log_path, "w", buffering=1, encoding="utf-8")
 else:
     ICON_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "icon.ico")
 
@@ -62,6 +62,7 @@ except Exception:
 # ─── Constantes pour Logique Personnages──────────────────
 TITLE_PATTERN   = re.compile(r"^(.+?)\s*-\s*Dofus", re.IGNORECASE)
 LOADING_PATTERN = re.compile(r"^Dofus Retro\b",      re.IGNORECASE)
+_shortened_titles: dict[int, tuple[str, str]] = {}
 
 def _is_dofus_pid(pid: int) -> bool:
     if not PSUTIL_OK:
@@ -163,12 +164,23 @@ NOTIF_TYPES = [
 
 # ─── Constantes pour Onflet Info ─────────────────────────────────────────────────────────
 
-APP_VERSION = "2.0.6"
+APP_VERSION = "3.0.0"
 APP_GITHUB  = "https://github.com/Slyss42/Dracoon"
 APP_TWITTER = "https://x.com/Slyss42"
-APP_LEGAL   = (
-    "Dofus Retro est une marque déposée de Ankama et ce projet n'y est pas affilié. L'utilisation d'un logiciel tiers est tolérée uniquement s'il ne modifie pas les fichiers du jeu et n'interagit pas directement avec celui-ci, comme un simple outil de gestion de fenêtres. Ce logiciel est fourni à titre personnel, sans aucune garantie, et n'est pas officiellement pris en charge par Ankama. Par conséquent, son utilisation se fait sous l'entière responsabilité de l'utilisateur : Ankama ne peut garantir la sécurité de l'outil et toute violation éventuelle de données ou de logs reste à la charge du joueur. Enfin, il est important de noter que les outils de type macros ou automatisation restent strictement interdits.\n"
-)
+
+# ─── i18n ─────────────────────────────────────────────────────────────────────
+
+_translations: dict = {}
+
+def load_translations(lang: str = "fr"):
+    global _translations
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "i18n.json")
+    with open(path, encoding="utf-8") as f:
+        all_langs = json.load(f)
+    _translations = all_langs.get(lang, all_langs.get("fr", {}))
+
+def t(key: str) -> str:
+    return _translations.get(key, key)
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 2. LOGIQUE
@@ -235,7 +247,9 @@ def reorder_with_ungroup_regroup(hwnds: list[int], log_fn=None):
         log_fn("  Terminé.", "ok")
 
 
-def extract_pseudo_from_title(title: str) -> str | None:
+def extract_pseudo_from_title(title: str, hwnd: int = None) -> str | None:
+    if hwnd is not None and hwnd in _shortened_titles:
+        return _shortened_titles[hwnd][0]
     m = TITLE_PATTERN.match(title)
     return m.group(1).strip() if m else None
 
@@ -251,12 +265,12 @@ def get_dofus_windows() -> list[tuple[int, str]]:
                 return True
         except Exception:
             return True
-        t = win32gui.GetWindowText(hwnd)
-        p = extract_pseudo_from_title(t)
+        title = win32gui.GetWindowText(hwnd)
+        p = extract_pseudo_from_title(title, hwnd)  # ← hwnd en plus
         if p:
             result.append((hwnd, p))
-        elif LOADING_PATTERN.match(t):
-            result.append((hwnd, "[Chargement…]"))
+        elif LOADING_PATTERN.match(title):
+            result.append((hwnd, t("tab.personnages.loading")))
         return True
     win32gui.EnumWindows(cb, None)
     return result
@@ -281,9 +295,9 @@ def list_dofus_windows() -> list[str]:
     result = []
     def cb(hwnd, _):
         if win32gui.IsWindowVisible(hwnd):
-            t = win32gui.GetWindowText(hwnd)
-            if "dofus" in t.lower():
-                result.append(t)
+            title = win32gui.GetWindowText(hwnd)
+            if "dofus" in title.lower():
+                result.append(title)
         return True
     win32gui.EnumWindows(cb, None)
     return result
@@ -294,6 +308,8 @@ def is_dofus_foreground() -> bool:
         return False
     try:
         hwnd = win32gui.GetForegroundWindow()
+        if hwnd in _shortened_titles:
+            return True
         title = win32gui.GetWindowText(hwnd)
         return bool(TITLE_PATTERN.match(title) or LOADING_PATTERN.match(title))
     except Exception:
@@ -364,19 +380,33 @@ def _unhook_all():
 def _build_config(shortcut_next, shortcut_prev, shortcut_back,
                   char_af_overrides=None, shortcut_main=None, char_main=None,
                   welcome_shown=False, char_skip_names=None,
-                  remove_notif=False, maximize_on_launch=True) -> dict:    
+                  remove_notif=False, maximize_on_launch=True,
+                  shortcut_move=None,
+                  move_overlay=True, move_cycle_delay: int = 95, move_enabled=True,
+                  dradidas_enabled=True, dradidas_turns=3, dradidas_sadidas=None, shortcut_dradidas=None, shortcut_ctrl_shift=None, lang="fr",shorten_title=False) -> dict: 
     return {
         "shortcut_next":     shortcut_next,
         "shortcut_prev":     shortcut_prev,
         "shortcut_back":     shortcut_back,
         "shortcut_main":     shortcut_main,
+        "shortcut_move":     shortcut_move,
         "char_main":         char_main if char_main is not None else "",
         "char_af_overrides": _encode_af_overrides(char_af_overrides or {}),
         "welcome_shown":     "1" if welcome_shown else "0",
         "char_skip_names":   json.dumps(sorted(char_skip_names), ensure_ascii=False)
                              if char_skip_names else "[]",
         "remove_notif":        "1" if remove_notif else "0",
-        "maximize_on_launch":  "1" if maximize_on_launch else "0",                     
+        "maximize_on_launch":  "1" if maximize_on_launch else "0",
+        "move_overlay":        "1" if move_overlay else "0",
+        "move_cycle_delay":     str(move_cycle_delay),
+        "move_enabled":        "1" if move_enabled else "0",
+        "dradidas_enabled":  "1" if dradidas_enabled else "0",
+        "dradidas_turns":    str(dradidas_turns),
+        "dradidas_sadidas":  json.dumps(sorted(dradidas_sadidas or []), ensure_ascii=False),
+        "shortcut_dradidas": shortcut_dradidas,
+        "shortcut_ctrl_shift": shortcut_ctrl_shift,
+        "lang": lang,
+        "shorten_title": "1" if shorten_title else "0",
     }
 
 
@@ -393,13 +423,14 @@ def focus_dofus_window(pseudo: str) -> tuple[bool, str]:
                 return True
         except Exception:
             return True
-        t = win32gui.GetWindowText(hwnd)
-        if re.match(rf"^{re.escape(pseudo)}\s*-\s*Dofus Retro\b", t, re.IGNORECASE):
-            found.append((hwnd, t))
+        title = win32gui.GetWindowText(hwnd)
+        p = extract_pseudo_from_title(title, hwnd)  # ← hwnd en plus
+        if p and p.lower() == pseudo.lower():
+            found.append((hwnd, title))
         return True
     win32gui.EnumWindows(cb, None)
     if not found:
-        return False, f"Aucune fenêtre « {pseudo} - Dofus Retro… » trouvée"
+        return False, f"Aucune fenêtre « {pseudo} » trouvée"
     return focus_window(found[0][0])
 
 
@@ -412,3 +443,325 @@ def _decode_af_overrides(raw: str) -> dict:
         return json.loads(raw) if raw else {}
     except Exception:
         return {}
+
+
+# ─── Presets d'ordre des personnages ──────────────────────────────────────────
+
+_PRESET_KEY = "order_presets"
+
+
+def load_order_presets() -> dict[str, list[str]]:
+    """Retourne {nom: [pseudo, ...]} depuis le registre."""
+    cfg = _load_config()
+    raw = cfg.get(_PRESET_KEY, "") or ""
+    try:
+        return json.loads(raw) if raw else {}
+    except Exception:
+        return {}
+
+
+def save_order_preset(name: str, pseudos: list[str]):
+    """Ajoute ou écrase un preset et persiste."""
+    presets = load_order_presets()
+    presets[name] = pseudos
+    _save_config({_PRESET_KEY: json.dumps(presets, ensure_ascii=False)})
+
+
+def delete_order_preset(name: str):
+    """Supprime un preset et persiste."""
+    presets = load_order_presets()
+    presets.pop(name, None)
+    _save_config({_PRESET_KEY: json.dumps(presets, ensure_ascii=False)})
+
+
+def apply_order_preset(preset_pseudos: list[str],
+                       current_order: list[tuple[int, str]]) -> list[tuple[int, str]]:
+    """
+    Retourne un nouvel ordre :
+      1. Personnages du preset dans l'ordre défini (s'ils sont connectés)
+      2. Personnages connectés absents du preset, dans leur ordre actuel
+    """
+    pseudo_to_hwnd = {p: h for h, p in current_order}
+    result = []
+    seen = set()
+    for pseudo in preset_pseudos:
+        if pseudo in pseudo_to_hwnd:
+            result.append((pseudo_to_hwnd[pseudo], pseudo))
+            seen.add(pseudo)
+    for hwnd, pseudo in current_order:
+        if pseudo not in seen:
+            result.append((hwnd, pseudo))
+    return result
+
+
+# ─── Logique Mode Déplacement ─────────────────────────────────────────────────
+
+import ctypes.wintypes as wt
+
+WH_MOUSE_LL    = 14
+WM_LBUTTONDOWN = 0x0201
+LLMHF_INJECTED = 0x00000001
+
+
+class MSLLHOOKSTRUCT(ctypes.Structure):
+    _fields_ = [
+        ("pt",          wt.POINT),
+        ("mouseData",   wt.DWORD),
+        ("flags",       wt.DWORD),
+        ("time",        wt.DWORD),
+        ("dwExtraInfo", ctypes.POINTER(ctypes.c_ulong)),
+    ]
+
+
+class MoveModeManager:
+    """
+    Gère le mode déplacement :
+      • Hook souris bas niveau (WH_MOUSE_LL) — aucune dépendance UI.
+      • À chaque clic gauche sur une fenêtre Dofus, appelle cycle_fn après
+        un délai configurable.
+      • Notifie l'UI via on_state_change(is_active: bool) à chaque toggle.
+    """
+
+    _CYCLE_DELAY_MS = 95   # délai (ms) avant de cycler après le clic
+    _COOLDOWN_MS    = 96   # cooldown minimum (ms) entre deux cycles
+
+    def __init__(self, cycle_fn, is_dofus_fg_fn, on_state_change=None):
+        self._cycle_fn        = cycle_fn
+        self._is_dofus_fg     = is_dofus_fg_fn
+        self._on_state_change = on_state_change
+        self._active          = False
+        self._last_ts         = 0.0
+        self._hook            = None
+        self._proc            = None
+        self._start_hook()
+
+    def toggle(self):
+        self._active = not self._active
+        if self._on_state_change:
+            self._on_state_change(self._active)
+
+    @property
+    def is_active(self) -> bool:
+        return self._active
+
+    def _start_hook(self):
+        threading.Thread(
+            target=self._hook_loop, daemon=True, name="MoveModeHook"
+        ).start()
+
+    def _hook_loop(self):
+        LowLevelMouseProc = ctypes.WINFUNCTYPE(
+            ctypes.c_int, ctypes.c_int, wt.WPARAM,
+            ctypes.POINTER(MSLLHOOKSTRUCT),
+        )
+
+        def _callback(nCode, wParam, lParam):
+            if nCode >= 0 and wParam == WM_LBUTTONDOWN:
+                if not (lParam.contents.flags & LLMHF_INJECTED):
+                    if self._active:
+                        # Vérifier la fenêtre SOUS le curseur (pas le foreground)
+                        # pour éviter d'intercepter les clics sur la barre des tâches
+                        try:
+                            pt = lParam.contents.pt
+                            hwnd_under = ctypes.windll.user32.WindowFromPoint(pt)
+                            # Remonter jusqu'à la fenêtre racine
+                            hwnd_root = ctypes.windll.user32.GetAncestor(hwnd_under, 2)  # GA_ROOT
+                            title_buf = ctypes.create_unicode_buffer(256)
+                            ctypes.windll.user32.GetWindowTextW(hwnd_root, title_buf, 256)
+                            title = title_buf.value
+                            is_dofus = bool(
+                                TITLE_PATTERN.match(title) or LOADING_PATTERN.match(title)
+                            )
+                        except Exception:
+                            is_dofus = False
+
+                        if is_dofus:
+                            now = time.monotonic()
+                            if now - self._last_ts >= (self._COOLDOWN_MS / 1000.0):
+                                self._last_ts = now
+                                threading.Timer(
+                                    self._CYCLE_DELAY_MS / 1000.0,
+                                    self._cycle_fn
+                                ).start()
+            return ctypes.windll.user32.CallNextHookEx(
+                self._hook, nCode, wParam, lParam)
+
+        self._proc = LowLevelMouseProc(_callback)
+        self._hook = ctypes.windll.user32.SetWindowsHookExW(
+            WH_MOUSE_LL, self._proc, None, 0)
+
+        msg = wt.MSG()
+        while ctypes.windll.user32.GetMessageW(ctypes.byref(msg), None, 0, 0) > 0:
+            ctypes.windll.user32.TranslateMessage(ctypes.byref(msg))
+            ctypes.windll.user32.DispatchMessageW(ctypes.byref(msg))
+
+        if self._hook:
+            ctypes.windll.user32.UnhookWindowsHookEx(self._hook)
+            self._hook = None
+
+class DradidasManager:
+    """
+    Gère les compteurs de Puissance Sylvestre par personnage.
+
+    Usage :
+        manager = DradidasManager(turns=3)
+        manager.set_sadidas({"Perso1", "Perso2"})
+
+        # Quand le raccourci est pressé sur la fenêtre de "Perso1" :
+        manager.trigger("Perso1")
+
+        # Dans le listener d'autofocus, avant chaque notification combat :
+        skip, left = manager.should_skip_combat("Perso1")
+        if skip:
+            # ignorer ce tour de combat
+    """
+
+    def __init__(self, turns: int = 3):
+        self._sadida_pseudos: set[str] = set()
+        self._skip_counts:    dict[str, int] = {}   # pseudo → tours restants
+        self._turns = max(1, int(turns))
+
+    # ── Propriétés ────────────────────────────────────────────────────────────
+
+    @property
+    def turns(self) -> int:
+        return self._turns
+
+    @turns.setter
+    def turns(self, value: int):
+        self._turns = max(1, int(value))
+
+    @property
+    def sadida_pseudos(self) -> set[str]:
+        return set(self._sadida_pseudos)
+
+    # ── Configuration ─────────────────────────────────────────────────────────
+
+    def set_sadidas(self, pseudos: set[str]):
+        """Met à jour l'ensemble des pseudos Sadida.
+        Annule les compteurs des personnages qui ne sont plus Sadida.
+        """
+        self._sadida_pseudos = set(pseudos)
+        for p in list(self._skip_counts.keys()):
+            if p not in self._sadida_pseudos:
+                del self._skip_counts[p]
+
+    def is_sadida(self, pseudo: str) -> bool:
+        return pseudo in self._sadida_pseudos
+
+    # ── Contrôle du compteur ──────────────────────────────────────────────────
+
+    def trigger(self, pseudo: str):
+        """Démarre ou remet à zéro le compteur pour ce pseudo.
+        Idempotent : si déjà actif, remet exactement à _turns (sans dépasser).
+        Ne fait rien si le pseudo n'est pas dans la liste Sadida.
+        """
+        if pseudo in self._sadida_pseudos:
+            self._skip_counts[pseudo] = self._turns
+
+    def should_skip_combat(self, pseudo: str) -> tuple[bool, int]:
+        """Appelé par le listener d'autofocus pour chaque notification de combat.
+
+        Retourne (True, tours_restants_après_décrément) si ce tour doit être ignoré.
+        Retourne (False, 0) si le compteur est épuisé ou si le pseudo n'est pas Sadida.
+        Décrémente le compteur à chaque appel positif.
+        """
+        remaining = self._skip_counts.get(pseudo, 0)
+        if remaining <= 0:
+            return False, 0
+        new_remaining = remaining - 1
+        if new_remaining == 0:
+            del self._skip_counts[pseudo]
+        else:
+            self._skip_counts[pseudo] = new_remaining
+        return True, new_remaining
+
+    def get_skip_remaining(self, pseudo: str) -> int:
+        """Retourne le nombre de tours restants (0 si inactif)."""
+        return self._skip_counts.get(pseudo, 0)
+
+    def cancel(self, pseudo: str):
+        """Annule le compteur d'un personnage spécifique."""
+        self._skip_counts.pop(pseudo, None)
+
+    def cancel_all(self):
+        """Annule tous les compteurs actifs."""
+        self._skip_counts.clear()
+
+    def has_active_skips(self) -> bool:
+        """True si au moins un personnage a un compteur actif."""
+        return bool(self._skip_counts)
+
+
+# ─── Logique Ctrl+Shift simulé ───────────────────────────────────────────────
+
+class CtrlShiftManager:
+    """
+    Simule le maintien de Ctrl+Shift en mode toggle.
+    • toggle(is_dofus_fg_fn) : active ou désactive — ne fait rien si Dofus
+      n'est pas au premier plan lors du premier appui.
+    • reapply() : relâche et ré-appuie sur la nouvelle fenêtre active ;
+      à appeler juste après chaque changement de focus (next/prev/back/main).
+    • release() : force le relâchement (fermeture de l'app).
+    """
+
+    def __init__(self):
+        self._active = False
+
+    @property
+    def is_active(self) -> bool:
+        return self._active
+
+    def toggle(self, is_dofus_fg_fn) -> bool:
+        """Retourne le nouvel état."""
+        if not self._active and not is_dofus_fg_fn():
+            return False
+        self._active = not self._active
+        if self._active:
+            keyboard.press('ctrl')
+            keyboard.press('shift')
+        else:
+            keyboard.release('shift')
+            keyboard.release('ctrl')
+        return self._active
+
+    def reapply(self):
+        """Relâche et ré-appuie pour cibler la nouvelle fenêtre active."""
+        if not self._active:
+            return
+        keyboard.release('shift')
+        keyboard.release('ctrl')
+        keyboard.press('ctrl')
+        keyboard.press('shift')
+
+    def release(self):
+        """Force le relâchement (ex. à la fermeture de l'app)."""
+        if self._active:
+            keyboard.release('shift')
+            keyboard.release('ctrl')
+            self._active = False
+
+# ─── Logique shorten_title ─────────────────────────────────────────────────
+def apply_shorten_titles(enabled: bool):
+    """Renomme les fenêtres Dofus Rétro pour n'afficher que le pseudo dans la barre des tâches.
+    Les fenêtres en loading pattern (ex: 'Dofus Retro') sont ignorées.
+    """
+    if not WIN32_OK:
+        return
+    def cb(hwnd, _):
+        if not win32gui.IsWindowVisible(hwnd):
+            return True
+        title = win32gui.GetWindowText(hwnd)
+        cached = _shortened_titles.get(hwnd)
+        pseudo = cached[0] if cached else extract_pseudo_from_title(title)
+        if not pseudo:
+            return True  # loading pattern → on touche pas
+        if enabled:
+            _shortened_titles[hwnd] = (pseudo, title)  # mémorise pseudo + titre original
+            win32gui.SetWindowText(hwnd, pseudo)
+        else:
+            _shortened_titles.pop(hwnd, None)
+            original = cached[1] if cached else f"{pseudo} - Dofus Retro"
+            win32gui.SetWindowText(hwnd, original)
+        return True
+    win32gui.EnumWindows(cb, None)
