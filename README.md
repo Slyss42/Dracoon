@@ -55,6 +55,7 @@ C:\CHEMIN\VERS\LE\DOSSIER\SRC>python UI.py
 PyInstaller --onefile --noconsole --clean ^
 --name "Dracoon" ^
 --icon "C:\CHEMIN\VERS\LE\DOSSIER\icon.ico" ^
+--add-data "C:\CHEMIN\VERS\LE\DOSSIER\src\i18n.json;." ^
 --add-data "C:\CHEMIN\VERS\LE\DOSSIER\icon.ico;." ^
 --hidden-import win32gui ^
 --hidden-import win32con ^
@@ -72,7 +73,7 @@ PyInstaller --onefile --noconsole --clean ^
 --hidden-import PIL.ImageTk ^
 --hidden-import keyboard ^
 --hidden-import psutil ^
-""C:\CHEMIN\VERS\LE\DOSSIER\src\UI.py"
+""C:\CHEMIN\VERS\LE\DOSSIER\src\main.py"
 ```
 * Lancer le fichier `.exe` se trouvant dans le dossier "dist"
 Vous pouvez librement déplacer le .exe et supprimer tous les autres fichiers sans que cela ait un impact.
