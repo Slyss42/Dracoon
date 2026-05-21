@@ -197,6 +197,9 @@ NOTIF_TYPES = [
 APP_VERSION = "3.0.0"
 APP_GITHUB  = "https://github.com/Slyss42/Dracoon"
 APP_TWITTER = "https://x.com/Slyss42"
+APP_LEGAL   = (
+    "Dofus Retro est une marque déposée de Ankama et ce projet n'y est pas affilié. L'utilisation d'un logiciel tiers est tolérée uniquement s'il ne modifie pas les fichiers du jeu et n'interagit pas directement avec celui-ci, comme un simple outil de gestion de fenêtres. Ce logiciel est fourni à titre personnel, sans aucune garantie, et n'est pas officiellement pris en charge par Ankama. Par conséquent, son utilisation se fait sous l'entière responsabilité de l'utilisateur : Ankama ne peut garantir la sécurité de l'outil et toute violation éventuelle de données ou de logs reste à la charge du joueur. Enfin, il est important de noter que les outils de type macros ou automatisation restent strictement interdits.\n"
+)
 
 # ─── i18n ─────────────────────────────────────────────────────────────────────
 
