@@ -25,26 +25,30 @@ jobs:
           if (Test-Path requirements.txt) { pip install -r requirements.txt }
 
       - name: Build with PyInstaller
-        run: |
-          pyinstaller --onefile --noconsole --clean `
-          --name "Dracoon" `
-          --hidden-import win32gui `
-          --hidden-import win32con `
-          --hidden-import win32api `
-          --hidden-import win32process `
-          --hidden-import win32com `
-          --hidden-import pythoncom `
-          --hidden-import winsdk.windows.ui.notifications `
-          --hidden-import winsdk.windows.ui.notifications.management `
-          --hidden-import winsdk.windows.foundation `
-          --hidden-import pystray._win32 `
-          --hidden-import PIL `
-          --hidden-import PIL.Image `
-          --hidden-import PIL.ImageDraw `
-          --hidden-import PIL.ImageTk `
-          --hidden-import keyboard `
-          --hidden-import psutil `
-          src/main.py
+              run: |
+                pyinstaller --onefile --noconsole --clean `
+                --name "Dracoon" `
+                --icon icon.ico `
+                --add-data "src\i18n.json;." `
+                --add-data "icon.ico;." `
+                --hidden-import win32gui `
+                --hidden-import win32con `
+                --hidden-import win32api `
+                --hidden-import win32process `
+                --hidden-import win32com `
+                --hidden-import pythoncom `
+                --hidden-import winsdk.windows.ui.notifications `
+                --hidden-import winsdk.windows.ui.notifications.management `
+                --hidden-import winsdk.windows.foundation `
+                --hidden-import pystray._win32 `
+                --hidden-import PIL `
+                --hidden-import PIL.Image `
+                --hidden-import PIL.ImageDraw `
+                --hidden-import PIL.ImageTk `
+                --hidden-import keyboard `
+                --hidden-import psutil `
+                --collect-all PyQt6 `
+                src/main.py
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4

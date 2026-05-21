@@ -4,3 +4,4 @@ pillow
 pystray
 winsdk
 pywin32
+PyQt6
