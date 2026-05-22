@@ -569,7 +569,7 @@ class TabParametresMixin:
             self._move_delay_spinbox = self._mode_spinbox_row(
                 panel_layout,
                 label     = t("tab.parametres.mode.move.ms"),
-                min_val   = 80,
+                min_val   = 90,
                 max_val   = 300,
                 current   = self._move_cycle_delay_ms,
                 unit      = "ms",
@@ -965,7 +965,7 @@ class TabParametresMixin:
             import win32gui
             hwnd  = win32gui.GetForegroundWindow()
             title = win32gui.GetWindowText(hwnd)
-            pseudo = extract_pseudo_from_title(title)
+            pseudo = extract_pseudo_from_title(title, hwnd)
             if pseudo and self._dradidas_manager.is_sadida(pseudo):
                 self._dradidas_manager.trigger(pseudo)
                 remaining = self._dradidas_manager.get_skip_remaining(pseudo)
