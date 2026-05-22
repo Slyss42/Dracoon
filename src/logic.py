@@ -164,7 +164,7 @@ NOTIF_TYPES = [
 
 # ─── Constantes pour Onflet Info ─────────────────────────────────────────────────────────
 
-APP_VERSION = "3.0.0"
+APP_VERSION = "3.0.1"
 APP_GITHUB  = "https://github.com/Slyss42/Dracoon"
 APP_TWITTER = "https://x.com/Slyss42"
 
@@ -570,7 +570,7 @@ class MoveModeManager:
                             ctypes.windll.user32.GetWindowTextW(hwnd_root, title_buf, 256)
                             title = title_buf.value
                             is_dofus = bool(
-                                TITLE_PATTERN.match(title) or LOADING_PATTERN.match(title)
+                                hwnd_root in _shortened_titles or TITLE_PATTERN.match(title) or LOADING_PATTERN.match(title)
                             )
                         except Exception:
                             is_dofus = False
