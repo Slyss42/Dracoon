@@ -164,7 +164,7 @@ NOTIF_TYPES = [
 
 # ─── Constantes pour Onflet Info ─────────────────────────────────────────────────────────
 
-APP_VERSION = "3.0.1"
+APP_VERSION = "3.0.2"
 APP_GITHUB  = "https://github.com/Slyss42/Dracoon"
 APP_TWITTER = "https://x.com/Slyss42"
 
