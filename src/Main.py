@@ -779,7 +779,7 @@ class App(
                 }}
             """)
 
-            btn_flag.clicked.connect(lambda checked=False, l=lang: _change_lang(l))
+            btn_flag.clicked.connect(lambda checked=False, l=lang: self._set_lang(l))
             flags_layout.addWidget(btn_flag)
 
         header_layout.addWidget(flags_widget)
