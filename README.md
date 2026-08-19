@@ -47,16 +47,27 @@ pip install pywin32 winsdk keyboard pystray Pillow psutil pyinstaller
 ```
 * Lancement pour test : (ouvrir l'invite de commande aller jusqu'au dossier ou se trouve le script et taper "python Dracoon.pyw"). OU : taper "python" et glisser le UI.py dans l'invite de commande + presser enter
 ```
-C:\CHEMIN\VERS\LE\DOSSIER\SRC>python UI.py
+C:\CHEMIN\VERS\LE\DOSSIER\SRC>python main.py
 ```
  
 * Build : (passer le .py en .exe)
 ```
+@echo off
+set "SRC_PATH=CHEMIN\VERS\LE\DOSSIER"
+
 PyInstaller --onefile --noconsole --clean ^
 --name "Dracoon" ^
---icon "C:\CHEMIN\VERS\LE\DOSSIER\icon.ico" ^
---add-data "C:\CHEMIN\VERS\LE\DOSSIER\src\i18n.json;." ^
---add-data "C:\CHEMIN\VERS\LE\DOSSIER\icon.ico;." ^
+--distpath "%SRC_PATH%\dist" ^
+--workpath "%SRC_PATH%\build" ^
+--specpath "%SRC_PATH%" ^
+--icon "%SRC_PATH%\src\ressources\icon.ico" ^
+--add-data "%SRC_PATH%\src\ressources\icon.ico;ressources" ^
+--add-data "%SRC_PATH%\src\ressources\i18n.json;ressources" ^
+--add-data "%SRC_PATH%\src\ressources\portraits;portraits" ^
+--add-binary "CHEMIN\VERS\UPDATER\Dracoon-updater.exe;." ^
+--paths "%SRC_PATH%\src" ^
+--paths "%SRC_PATH%\src\ui" ^
+--paths "%SRC_PATH%\src\core" ^
 --hidden-import win32gui ^
 --hidden-import win32con ^
 --hidden-import win32api ^
@@ -73,7 +84,8 @@ PyInstaller --onefile --noconsole --clean ^
 --hidden-import PIL.ImageTk ^
 --hidden-import keyboard ^
 --hidden-import psutil ^
-""C:\CHEMIN\VERS\LE\DOSSIER\src\main.py"
+"%SRC_PATH%\src\Main.py"
+
 ```
 * Lancer le fichier `.exe` se trouvant dans le dossier "dist"
 Vous pouvez librement déplacer le .exe et supprimer tous les autres fichiers sans que cela ait un impact.
