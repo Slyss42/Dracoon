@@ -4,16 +4,18 @@ Onglet « Info » — à propos, liens, mentions légales, réinitialisation.
 """
 
 import webbrowser
+import os
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
     QLabel, QPushButton, QFrame,
 )
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QCursor
+from PyQt6.QtGui import QCursor, QFont
 
-from logic import APP_VERSION, APP_GITHUB, APP_TWITTER, _unhook_all, t
-
+from core.config import APP_VERSION, APP_GITHUB, APP_TWITTER, LOG_PATH
+from core.shortcuts import _unhook_all
+from core.i18n import t
 
 class TabInfosMixin:
     """
@@ -81,10 +83,23 @@ class TabInfosMixin:
         row_ver_layout.addWidget(lbl_ver_label)
         row_ver_layout.addStretch()
 
+        # Bouton à deux états, au même emplacement :
+        #   - pas de MAJ connue -> "Vérifier" (déclenche une vérification manuelle)
+        #   - MAJ connue        -> badge "MAJ disponible" (ouvre la popup de MAJ)
+        # Un seul widget, un seul état visible à la fois : l'un remplace l'autre.
+        self._lbl_version_update = QPushButton("")
+        self._lbl_version_update.setFont(self.S.Bouton.font_petit)
+        self._lbl_version_update.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._lbl_version_update.setFlat(True)
+        self._lbl_version_update.clicked.connect(self._on_version_button_clicked)
+        row_ver_layout.addWidget(self._lbl_version_update)
+        row_ver_layout.addSpacing(10)
+
         lbl_ver_val = QLabel(APP_VERSION)
         lbl_ver_val.setFont(self.S.Bouton.font_principal)
         lbl_ver_val.setStyleSheet(f"color: {self.ACCENT}; background: transparent;")
         row_ver_layout.addWidget(lbl_ver_val)
+
         cl_ver.addWidget(row_ver)
 
         # --- Liens ---
@@ -135,6 +150,37 @@ class TabInfosMixin:
         lbl_legal_body.setWordWrap(True)
         cl_legal.addWidget(lbl_legal_body)
 
+        # --- Fichier de log ---
+        _card_log, cl_log = _card()
+
+        lbl_log_titre = QLabel(t("tab.info.log.title"))
+        lbl_log_titre.setFont(self.S.Info.font)
+        lbl_log_titre.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
+        cl_log.addWidget(lbl_log_titre)
+
+        lbl_log_path = QLabel(LOG_PATH)
+        lbl_log_path.setFont(QFont("Consolas", 10))
+        lbl_log_path.setStyleSheet(f"color: {self.TEXT}; background: transparent;")
+        lbl_log_path.setWordWrap(True)
+        cl_log.addWidget(lbl_log_path)
+
+        btn_log = QPushButton("📂  " + t("tab.info.log.bouton"))
+        btn_log.setFont(self.S.Bouton.font_petit)
+        btn_log.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        btn_log.setFlat(True)
+        btn_log.setStyleSheet(f"""
+            QPushButton {{
+                background-color: #252b3b;
+                color: {self.ACCENT};
+                border: none;
+                border-radius: 4px;
+                padding: {self.S.Bouton.pady_petit}px {self.S.Bouton.padx_petit}px;
+            }}
+            QPushButton:hover {{ background-color: #2e3550; }}
+        """)
+        btn_log.clicked.connect(lambda: os.startfile(os.path.dirname(LOG_PATH)))
+        cl_log.addWidget(btn_log, alignment=Qt.AlignmentFlag.AlignLeft)
+
         # --- Réinitialiser ---
         _card_reset, cl_reset = _card(pady_bot=16)
 
@@ -167,3 +213,84 @@ class TabInfosMixin:
         cl_reset.addWidget(btn_reset, alignment=Qt.AlignmentFlag.AlignLeft)
 
         layout.addStretch()
+
+        # Si une MAJ était déjà connue avant que cet onglet ne soit construit
+        # (l'onglet Info n'est buildé qu'à la première visite), on synchronise
+        # tout de suite le bouton qu'on vient de créer.
+        self._sync_version_button()
+
+    # ------------------------------------------------------------------
+    # Bouton "Vérifier" / "MAJ disponible" (2 états du même widget)
+    # ------------------------------------------------------------------
+
+    def _sync_version_button(self):
+        """
+        Met le bouton dans le bon état selon self._last_update_info.
+        À appeler chaque fois que cet état change (résultat de vérif,
+        MAJ ignorée, etc.) — c'est le pendant, pour ce bouton, de
+        _refresh_update_indicator() côté badge du header.
+        """
+        btn = getattr(self, "_lbl_version_update", None)
+        if btn is None:
+            return
+
+        if getattr(self, "_update_check_running", False):
+            self._style_version_button_checking()
+            return
+
+        info = getattr(self, "_last_update_info", None)
+        if info is not None:
+            self._style_version_button_available()
+        else:
+            self._style_version_button_idle()
+
+    def _style_version_button_idle(self):
+        btn = self._lbl_version_update
+        btn.setText(t("tab.info.update.check_now"))
+        btn.setEnabled(True)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.CARD};
+                color: {self.GRAY};
+                border: 1px solid {self.GRAY};
+                border-radius: 12px;
+                padding: 4px 12px;
+            }}
+            QPushButton:hover {{ border-color: {self.ACCENT}; color: {self.ACCENT}; }}
+        """)
+
+    def _style_version_button_checking(self):
+        btn = self._lbl_version_update
+        btn.setText(t("tab.info.update.checking"))
+        btn.setEnabled(False)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.CARD};
+                color: {self.GRAY};
+                border: 1px solid {self.GRAY};
+                border-radius: 12px;
+                padding: 4px 12px;
+            }}
+        """)
+
+    def _style_version_button_available(self):
+        btn = self._lbl_version_update
+        btn.setText(t("update.badge"))
+        btn.setEnabled(True)
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.CARD};
+                color: {self.ACCENT};
+                border: 1px solid {self.ACCENT};
+                border-radius: 12px;
+                padding: 4px 12px;
+            }}
+            QPushButton:hover {{ background-color: {self.ACCENT}; color: {self.BG}; }}
+        """)
+
+    def _on_version_button_clicked(self):
+        info = getattr(self, "_last_update_info", None)
+        if info is not None:
+            self._show_update_popup(info)
+        else:
+            self._check_for_updates(silent=False)
