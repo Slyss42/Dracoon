@@ -1,9 +1,3 @@
-import time
-_T0 = time.perf_counter()
-
-def _t(label):
-    print(f"[PERF] {label:40s} {(time.perf_counter() - _T0)*1000:7.1f} ms")
-
 """
 Main.py
 Point d'entrée de Dracoon.
@@ -12,8 +6,13 @@ Assemble la classe App depuis les mixins de chaque onglet.
 
 import json
 import os
+import queue
 import threading
 import webbrowser
+import logging
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "ui"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "core"))
 
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
@@ -22,18 +21,28 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QIcon, QPixmap, QImage, QCursor
 
-from logic import (
-    WIN32_OK, WINSDK_OK, KEYBOARD_OK, TRAY_OK,
-    ICON_PATH, APP_GITHUB, APP_TWITTER, DradidasManager, CtrlShiftManager,
-    _load_config, _save_config, _build_config,
-    _unhook_all, _release_modifier_keys,
-    _decode_af_overrides, t,
+from core.config import (
+    APP_VERSION, WIN32_OK, WINSDK_OK, KEYBOARD_OK, TRAY_OK,
+    ICON_PATH, APP_GITHUB, APP_TWITTER, LOG_PATH,
+    load_config, save_config, build_config,
+    _decode_af_overrides, _decode_char_icons, setup_file_logger,
 )
+from core.dradidasmode import DradidasManager
+from core.shortcuts import _unhook_all, CtrlShiftManager, _release_modifier_keys
+from core.windows import unlock_foreground_switching, restore_foreground_lock
+from core.icons import restore_all_original_icons, set_window_icon
+from core.i18n import t
+from core.single_instance import acquire_single_instance
+from core.reg_migration import migrate_registry_if_needed
+
+from ui.theme import BoolVar, Styles, Palette
 
 from UI_Tab_Personnages  import TabPersonnagesMixin
 from UI_Tab_Raccourcis   import TabRaccourcisMixin
+from UI_Tab_Outils       import TabOutilsMixin
 from UI_Tab_Parametres   import TabParametresMixin
 from UI_Tab_Infos        import TabInfosMixin
+from UI_UpdatePopup      import UpdatePopupMixin #supprimer si offline
 
 try:
     import pystray
@@ -46,58 +55,33 @@ try:
 except Exception:
     pass
 
-
 # ---------------------------------------------------------------------------
-# Utilitaires partagés
+# LOGGING / EXCEPTHOOK
 # ---------------------------------------------------------------------------
 
-class _BoolVar:
-    """Remplace tk.BooleanVar — conserve l'interface .get() / .set()."""
-    def __init__(self, value: bool = False):
-        self._value = value
-    def get(self) -> bool:
-        return self._value
-    def set(self, value: bool):
-        self._value = value
+_TAG_TO_LEVEL = {
+    "info":  logging.INFO,
+    "ok":    logging.INFO,
+    "warn":  logging.WARNING,
+    "error": logging.ERROR,
+    "dim":   logging.DEBUG,
+    "debug": logging.DEBUG,
+    "time":  logging.INFO,
+}
 
 
-class UIStyles:
-    class Titre:
-        font  = QFont("Segoe UI", 14, QFont.Weight.Bold)
-        padx  = 16
-
-    class OngletActif:
-        font  = QFont("Segoe UI", 11, QFont.Weight.Bold)
-
-    class Bouton:
-        font_standard         = QFont("Segoe UI", 11)
-        padx_standard         = 22
-        pady_standard         = 12
-
-        font_principal        = QFont("Segoe UI", 12, QFont.Weight.Bold)
-        padx_principal        = 16
-        pady_principal        = 7
-
-        font_type_notif       = QFont("Segoe UI", 11, QFont.Weight.Bold)
-        padx_type_notif       = 10
-        pady_type_notif       = 4
-
-        font_type_notifnobold = QFont("Segoe UI", 11)
-        padx_type_notifnobold = 10
-        pady_type_notifnobold = 4
-
-        font_petit            = QFont("Segoe UI", 11)
-        padx_petit            = 12
-        pady_petit            = 5
-
-    class EnTete:
-        font       = QFont("Segoe UI", 12, QFont.Weight.Bold)
-        pady_titre = (14, 2)
-        pady_sous  = (0, 10)
-
-    class Info:
-        font = QFont("Segoe UI", 11, QFont.Weight.Normal)
-
+def _install_excepthooks(logger: logging.Logger):
+    def _hook(exc_type, exc, tb):
+        logger.error("Uncaught exception", exc_info=(exc_type, exc, tb))
+    sys.excepthook = _hook
+    try:
+        def _thook(args):
+            name = args.thread.name if args.thread else "?"
+            logger.error("Uncaught exception in thread %s", name,
+                         exc_info=(args.exc_type, args.exc_value, args.exc_traceback))
+        threading.excepthook = _thook
+    except Exception:
+        pass
 
 # ---------------------------------------------------------------------------
 # Application principale
@@ -106,34 +90,26 @@ class UIStyles:
 class App(
     TabPersonnagesMixin,
     TabRaccourcisMixin,
+    TabOutilsMixin,
     TabParametresMixin,
     TabInfosMixin,
+    UpdatePopupMixin, #supprimer si offline
     QMainWindow,
 ):
     # ---- Palette de couleurs ----
-    BG        = "#0f1117"
-    PANEL     = "#181c26"
-    CARD      = "#1a1f2e"
-    ACCENT    = "#f5a623"
-    GREEN     = "#4caf78"
-    RED       = "#e05252"
-    BLUE      = "#4a90d9"
-    GRAY      = "#6b7280"
-    TEXT      = "#e8e8e8"
-    FONT_MONO = QFont("Consolas", 10)
-    FONT_UI   = QFont("Segoe UI", 10)
-
-    S         = UIStyles
-
-    TYPE_COLORS = {
-        "combat":  "#e05252",
-        "echange": "#f5a623",
-        "groupe":  "#4caf78",
-        "mp":      "#4a90d9",
-        "defi":    "#c97bdb",
-        "craft":   "#e8a040",
-        "pvp":     "#e05252",
-    }
+    BG        = Palette.BG
+    PANEL     = Palette.PANEL
+    CARD      = Palette.CARD
+    ACCENT    = Palette.ACCENT
+    GREEN     = Palette.GREEN
+    RED       = Palette.RED
+    BLUE      = Palette.BLUE
+    GRAY      = Palette.GRAY
+    TEXT      = Palette.TEXT
+    FONT_MONO = Palette.FONT_MONO
+    FONT_UI   = Palette.FONT_UI
+    S         = Styles
+    TYPE_COLORS = Palette.TYPE_COLORS
 
     NO_SHORTCUT = None
 
@@ -223,6 +199,10 @@ class App(
 
         super().__init__()
         _t("super().__init__")
+        
+        self._logger = setup_file_logger()
+        _install_excepthooks(self._logger)
+        #self._logger.info("Dracoon %s — démarrage", APP_VERSION)
 
         self.setWindowTitle(t("app.description"))
         self.setStyleSheet(self._stylesheet_base())
@@ -230,9 +210,9 @@ class App(
         self.setMinimumSize(900, 670)
         _t("setWindowTitle / setStyleSheet / resize")
 
-        cfg = _load_config()
+        cfg = load_config()
         self._lang = cfg.get("lang", "fr")
-        _t("_load_config")
+        _t("load_config")
 
         self._running       = False
         self._loop          = None
@@ -267,6 +247,9 @@ class App(
 
         self._shortcut_ctrl_shift: str | None = cfg.get("shortcut_ctrl_shift", None)
         self._ctrl_shift_manager = CtrlShiftManager()
+        self._shortcut_queue = queue.SimpleQueue()
+        self._shortcut_worker = threading.Thread(target=self._shortcut_action_worker, daemon=True)
+        self._shortcut_worker.start()
 
         _raw_sadidas = cfg.get("dradidas_sadidas", "[]") or "[]"
         try:
@@ -292,12 +275,19 @@ class App(
         except Exception:
             self._char_skip_names: set[str] = set()
 
+        self._char_icons: dict[str, dict] = _decode_char_icons(
+            cfg.get("char_icons", "")
+        )
+        # {pseudo: {"color": "e05252"|None, "portrait": "iop_f"|None}}    
+
         self._welcome_shown: bool = cfg.get("welcome_shown", "0") == "1"
 
-        self.remove_notif_var       = _BoolVar(cfg.get("remove_notif",       "1") == "1")
-        self.maximize_on_launch_var = _BoolVar(cfg.get("maximize_on_launch", "1") == "1")
-        self.move_overlay_var       = _BoolVar(cfg.get("move_overlay",       "1") == "1")
-        self.shorten_title_var      = _BoolVar(cfg.get("shorten_title",      "0") == "1")
+        self.remove_notif_var       = BoolVar(cfg.get("remove_notif",       "1") == "1")
+        self.maximize_on_launch_var = BoolVar(cfg.get("maximize_on_launch", "1") == "1")
+        self.move_overlay_var       = BoolVar(cfg.get("move_overlay",       "1") == "1")
+        self.shorten_title_var      = BoolVar(cfg.get("shorten_title",      "0") == "1")
+        self.check_update_on_launch_var = BoolVar(cfg.get("check_update_on_launch", "1") == "1")
+        self.debug_var              = BoolVar(False)
         _t("init variables / config")
 
         self._central = QWidget()
@@ -309,6 +299,10 @@ class App(
 
         self._build_ui(_t)
         _t("_build_ui")
+
+        self._init_update_checker() #supprimer si offline
+        _t("_init_update_checker") #supprimer si offline
+
 
         try:
             _ico = QIcon(ICON_PATH)
@@ -328,7 +322,6 @@ class App(
             self.log_msg("pystray/pillow manquants → pip install pystray pillow", "warn")
 
         if WIN32_OK and WINSDK_OK:
-            self.log_msg("Prêt — AutoFocus démarré automatiquement.", "ok")
             self._start()
         _t("_start")
 
@@ -337,11 +330,13 @@ class App(
         _t("_apply_shortcuts")
 
         if self.shorten_title_var.get():
-            from logic import apply_shorten_titles
+            from core.windows import apply_shorten_titles
             QTimer.singleShot(800, lambda: apply_shorten_titles(True))
 
         if not self._welcome_shown:
             QTimer.singleShot(200, self._show_welcome_popup)
+
+        QTimer.singleShot(1500, lambda: self._check_for_updates(silent=True)) #supprimer si offline
         _t("__init__ terminé")
 
     # ------------------------------------------------------------------
@@ -359,12 +354,14 @@ class App(
     def _quit(self):
 
         if self.shorten_title_var.get():
-            from logic import apply_shorten_titles
+            from core.windows import apply_shorten_titles
             apply_shorten_titles(False)
+            restore_all_original_icons()
 
         self._persist_config()
         _unhook_all()
         _release_modifier_keys()
+        restore_foreground_lock()
         self._running = False
         if self._loop and self._loop.is_running():
             self._loop.call_soon_threadsafe(self._loop.stop)
@@ -608,7 +605,7 @@ class App(
         root_layout.addWidget(close_btn)
         root_layout.addSpacing(6)
 
-        dont_show_var = _BoolVar(False)
+        dont_show_var = BoolVar(False)
         chk = QCheckBox(t("popup.unshow"))
         chk.setFont(FONT_BODY)
         chk.setStyleSheet(f"""
@@ -649,8 +646,6 @@ class App(
         def _on_reject():
             if close_btn.isEnabled():
                 _close()
-            else:
-                self.close()  # ← ferme l'application si le timer n'est pas écoulé
 
         def _center_popup():
             pw = popup.width()
@@ -753,6 +748,30 @@ class App(
         header_layout.addSpacing(self.S.Titre.padx)
         header_layout.addStretch()
 
+        # ── Badge mise à jour ──  #supprimer si offline
+        self._update_badge = QPushButton("")
+        self._update_badge.setFont(self.S.Bouton.font_petit)
+        self._update_badge.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+        self._update_badge.setFlat(True)
+        self._update_badge.setVisible(False)
+        self._update_badge.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {self.CARD};
+                color: {self.ACCENT};
+                border: 1px solid {self.ACCENT};
+                border-radius: 12px;
+                padding: 4px 12px;
+            }}
+            QPushButton:hover {{ background-color: {self.ACCENT}; color: {self.BG}; }}
+        """)
+        self._update_badge.clicked.connect(
+            lambda: self._show_update_popup(self._last_update_info)
+            if getattr(self, "_last_update_info", None) else None
+        )
+        header_layout.addWidget(self._update_badge)
+        header_layout.addSpacing(12)
+        #supprimer si offline (fin badge)        
+
         # ── Drapeaux ──
         flags_widget = QWidget()
         flags_widget.setStyleSheet("background: transparent;")
@@ -824,6 +843,7 @@ class App(
         # APRÈS :
         for key, label in [("personnages", t("app.tab.personnages")),
                            ("raccourcis", t("app.tab.raccourcis")),
+                           ("outils", t("app.tab.outils")),
                            ("parametres", t("app.tab.parametres")),
                            ("info", t("app.tab.info"))]:
             container = QWidget()
@@ -887,7 +907,14 @@ class App(
         """
 
     def _switch_tab(self, key: str):
-        self._build_tab_now(key)   # ← ajoute cette ligne
+        try:
+            self._build_tab_now(key)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Erreur onglet", f"{key} :\n{e}")
+            return
         for k, btn in self._tab_btns.items():
             btn.setStyleSheet(self._tab_btn_style(active=(k == key)))
             self._tab_bars[k].setStyleSheet(
@@ -903,6 +930,7 @@ class App(
         builders = {
             "personnages": self._build_tab_personnages,
             "raccourcis":  self._build_tab_raccourcis,
+            "outils":      self._build_tab_outils,
             "parametres":  self._build_tab_parametres,
             "info":        self._build_tab_info,
         }
@@ -914,7 +942,7 @@ class App(
     # ------------------------------------------------------------------
 
     def _persist_config(self):
-        _save_config(_build_config(
+        save_config(build_config(
             self._shortcut_next, self._shortcut_prev, self._shortcut_back,
             self._char_af_overrides, self._shortcut_main, self._char_main,
             self._welcome_shown, self._char_skip_names,
@@ -931,6 +959,8 @@ class App(
             shortcut_ctrl_shift = self._shortcut_ctrl_shift,
             lang                = self._lang,
             shorten_title       = self.shorten_title_var.get(),
+            char_icons          = self._char_icons,
+            check_update_on_launch = self.check_update_on_launch_var.get(),
         ))
 
     def _set_lang(self, lang: str):
@@ -939,26 +969,28 @@ class App(
         self._lbl_lang_hint.setText("↺ " +t("app.redemarrez"))
         if hasattr(self, "_lbl_popup_lang_hint"):  # ← si la popup est ouverte
             self._lbl_popup_lang_hint.setText("↺ " + t("app.redemarrez"))
+
+
+# ------------------------------------------------------------------
+# log_msg — stub silencieux (plus d'onglet dédié, appels conservés)
+# ------------------------------------------------------------------
+
+    def log_msg(self, msg: str, tag: str = "info"):
+        level = _TAG_TO_LEVEL.get(tag, logging.INFO) if not tag.startswith("type_") else logging.INFO
+        try:
+            self._logger.log(level, msg)
+        except Exception:
+            pass 
+
 # ---------------------------------------------------------------------------
 # Point d'entrée
 # ---------------------------------------------------------------------------
 
-#if __name__ == "__main__":
-    #import sys
-    #from logic import load_translations, _load_config
-
-    #load_translations(_load_config().get("lang", "fr"))
-
-    #app = QApplication(sys.argv)
-    #app.setStyle("Fusion")
-    #window = App()
-    #window.show()
-    #sys.exit(app.exec())
-
 if __name__ == "__main__":
     import sys
     import time
-    from logic import load_translations, _load_config
+    from core.i18n import load_translations
+    from core.config import load_config, setup_file_logger
 
     _T0 = time.perf_counter()
     def _t(label):
@@ -966,8 +998,22 @@ if __name__ == "__main__":
 
     _t("début __main__")
 
-    load_translations(_load_config().get("lang", "fr"))
+    logger = setup_file_logger()
+    _t("setup_file_logger")
+
+    # --- Migration registre DofusRetro -> Dracoon (une seule fois, voir reg_migration.py) ---
+    migrate_registry_if_needed(logger=logger)
+    _t("migrate_registry_if_needed")
+
+    load_translations(load_config().get("lang", "fr"))
     _t("load_translations")
+
+    # --- Mutex : une seule instance ---
+    if not acquire_single_instance(window_title=t("app.description")):
+        sys.exit(0)
+    _t("acquire_single_instance")
+
+    logger.info("──────── Dracoon %s — démarrage (instance principale) ────────", APP_VERSION)
 
     app = QApplication(sys.argv)
     _t("QApplication()")
@@ -975,10 +1021,26 @@ if __name__ == "__main__":
     app.setStyle("Fusion")
     _t("setStyle Fusion")
 
+    # import traceback
+    # try:
+    #     window = App(_t)
+    #     _t("App() terminé")
+    # except Exception as e:
+    #     traceback.print_exc()
+    #     input("Appuie sur Entrée pour quitter...")
+    #     sys.exit(1)
+
+    # window.show()
+    # _t("window.show()")
+    # sys.exit(app.exec())
+
     window = App(_t)          # on passe _t à App pour mesurer l'intérieur
     _t("App() terminé")
 
     window.show()
     _t("window.show()")
+
+    unlock_foreground_switching()
+    _t("unlock_foreground_switching()")
 
     sys.exit(app.exec())    
