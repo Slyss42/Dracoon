@@ -18,9 +18,10 @@ from PyQt6.QtGui import QFont, QCursor, QKeySequence, QKeyEvent
 from core.config import KEYBOARD_OK
 from core.i18n import t
 
-from core.movemode import MoveModeManager
 from core.windows import is_dofus_foreground, extract_pseudo_from_title
 
+
+from UI_Spotlight import open_spotlight
 
 class TabOutilsMixin:
     """
@@ -80,23 +81,27 @@ class TabOutilsMixin:
         scroll.setWidget(inner)
         layout.addWidget(scroll, stretch=1)
 
-        # --- Initialisation manager + construction des cartes ---
+                # --- Initialisation des cartes ---
+        # NB : self._move_manager et self._move_overlay sont déjà créés une
+        # seule fois dans Main.py.__init__ (pour être actifs dès le lancement,
+        # sans dépendre de l'ouverture de cet onglet). Ne PAS les recréer ici
+        # sous peine d'avoir deux MoveModeManager indépendants (deux hooks
+        # souris, réglages désynchronisés, overlay qui ne réagit jamais au
+        # bon état).
         if not hasattr(self, "_mode_panels"):
             self._mode_panels = {}
             self._mode_arrows = {}
-        self._move_overlay = None
-        self._move_manager = MoveModeManager(
-            cycle_fn        = self._cycle_next,
-            is_dofus_fg_fn  = is_dofus_foreground,
-            on_state_change = self._on_move_state_change,
-        )
+
+        self._build_mode_spotlight()
+        
         self._build_mode_deplacement()
-        self._move_hotkey_ref = None
-        QTimer.singleShot(500, self._register_move_hotkey)
+        #self._move_hotkey_ref = None
+        #QTimer.singleShot(500, self._register_move_hotkey)
 
         self._build_mode_dradidas()
-        self._dradidas_hotkey_ref = None
-        QTimer.singleShot(500, self._register_dradidas_hotkey)
+        #self._dradidas_hotkey_ref = None
+        #QTimer.singleShot(500, self._register_dradidas_hotkey)
+
 
     def _build_mode_card(
             self,
@@ -152,7 +157,13 @@ class TabOutilsMixin:
             # ── Checkbox permission (QLabel cliquable) ─────────────────────
             # La checkbox n'active/désactive PAS le mode directement.
             # Elle sert de permission : si cochée, le raccourci peut toggler le mode.
-            _cb_enabled = [getattr(self, "_move_enabled", True)]   # état mutable dans la closure
+            _MODE_ENABLED_ATTR = {
+                "deplacement": "_move_enabled",
+                "dradidas":    "_dradidas_enabled",
+                "spotlight":   "_spotlight_enabled",
+            }
+            enabled_attr = _MODE_ENABLED_ATTR.get(mode_id, f"_{mode_id}_enabled")
+            _cb_enabled = [getattr(self, enabled_attr, True)]   # état mutable dans la closure
 
             def _cb_text():
                 return "☑" if _cb_enabled[0] else "☐"
@@ -168,7 +179,7 @@ class TabOutilsMixin:
 
             def _on_cb_click(event=None):
                 _cb_enabled[0] = not _cb_enabled[0]
-                self._move_enabled = _cb_enabled[0]
+                setattr(self, enabled_attr, _cb_enabled[0])
                 self._persist_config()
                 toggle_cb.setText(_cb_text())
                 toggle_cb.setStyleSheet(f"color: {_cb_color()}; background: transparent;")
@@ -178,6 +189,7 @@ class TabOutilsMixin:
                     if hasattr(self, "_mode_checkboxes"):
                         self._mode_checkboxes[mode_id] = _cb_enabled
                 event.accept()   # stopper la propagation vers le header
+                
 
             toggle_cb.mousePressEvent = _on_cb_click
 
@@ -295,6 +307,8 @@ class TabOutilsMixin:
             entry.focusInEvent = lambda e, en=entry: self._start_capture_move(en)
         elif which == "dradidas":
             entry.focusInEvent = lambda e, en=entry: self._start_capture_dradidas(en) 
+        elif which == "spotlight":
+            entry.focusInEvent = lambda e, en=entry: self._start_capture_spotlight(en)
         else:
             entry.focusInEvent = lambda e, w=which, en=entry: self._start_capture(en, w)
         row_layout.addWidget(entry)
@@ -317,6 +331,8 @@ class TabOutilsMixin:
             btn_aucun.clicked.connect(self._set_no_shortcut_move)
         elif which == "dradidas":
             btn_aucun.clicked.connect(self._set_no_shortcut_dradidas)
+        elif which == "spotlight":
+            btn_aucun.clicked.connect(self._set_no_shortcut_spotlight)
         else:
             btn_aucun.clicked.connect(lambda checked=False, w=which: self._set_no_shortcut(w))
         row_layout.addWidget(btn_aucun)
@@ -432,6 +448,144 @@ class TabOutilsMixin:
         return spinbox
 
     # ------------------------------------------------------------------
+    # Mode Recherche rapide (Spotlight)
+    # ------------------------------------------------------------------
+
+    def _build_mode_spotlight(self):
+
+        def _build_content(panel_layout: QVBoxLayout):
+            self._spotlight_shortcut_entry_mode = self._mode_shortcut_entry(
+                panel_layout, "Raccourci", self._shortcut_spotlight, "spotlight"
+            )
+
+        self._build_mode_card(
+            mode_id          = "spotlight",
+            icon             = "🔍",
+            title            = "Recherche rapide",
+            subtitle         = "Ouvre une palette de commande pour naviguer ou lancer une action",
+            is_active_fn     = lambda: False,   # pas d'état actif/inactif — juste un déclencheur
+            toggle_fn        = lambda: None,
+            build_content_fn = _build_content,
+        )
+
+    def _set_no_shortcut_spotlight(self):
+        self._shortcut_spotlight = None
+        if hasattr(self, "_spotlight_shortcut_entry_mode"):
+            self._spotlight_shortcut_entry_mode.setText("Aucun")
+            self._spotlight_shortcut_entry_mode.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: #252b3b;
+                    color: {self.GRAY};
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px;
+                }}
+            """)
+        self._apply_shortcuts()
+        self._register_spotlight_hotkey()
+
+    def _start_capture_spotlight(self, entry: QLineEdit):
+        """Capture de touche dédiée au raccourci de la Recherche rapide."""
+        entry.setText("Appuyez…")
+        entry.setStyleSheet(f"""
+            QLineEdit {{
+                background-color: #252b3b;
+                color: {self.GRAY};
+                border: none;
+                border-radius: 4px;
+                padding: 4px;
+            }}
+        """)
+
+        def on_key(event: QKeyEvent):
+            mod_keys = {
+                Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt,
+                Qt.Key.Key_Meta, Qt.Key.Key_CapsLock,
+                Qt.Key.Key_Super_L, Qt.Key.Key_Super_R,
+            }
+            k = event.key()
+            if k in mod_keys:
+                return
+            mods = []
+            if event.modifiers() & Qt.KeyboardModifier.ControlModifier: mods.append("ctrl")
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:   mods.append("shift")
+            if event.modifiers() & Qt.KeyboardModifier.AltModifier:     mods.append("alt")
+            key_name = QKeySequence(k).toString().lower()
+            combo = "+".join(mods + [key_name]) if mods else key_name
+
+            self._shortcut_spotlight = combo
+            entry.setText(combo)
+            entry.setStyleSheet(f"""
+                QLineEdit {{
+                    background-color: #252b3b;
+                    color: {self.ACCENT};
+                    border: none;
+                    border-radius: 4px;
+                    padding: 4px;
+                }}
+            """)
+            entry.removeEventFilter(self._spotlight_capture_filter)
+            self._spotlight_capture_filter = None
+            self.setFocus()
+            self._apply_shortcuts()
+            self._register_spotlight_hotkey()
+
+        class _KeyFilter(QObject):
+            def __init__(self, cb):
+                super().__init__()
+                self._cb = cb
+            def eventFilter(self, obj, evt):
+                if evt.type() == QEvent.Type.KeyPress:
+                    self._cb(evt)
+                    return True
+                return False
+
+        self._spotlight_capture_filter = _KeyFilter(on_key)
+        entry.installEventFilter(self._spotlight_capture_filter)
+
+    def _register_spotlight_hotkey(self):
+        """Enregistre (ou retire) le hotkey Spotlight indépendamment des autres raccourcis."""
+        if not KEYBOARD_OK:
+            return
+        try:
+            import keyboard as _kb
+            if hasattr(self, "_spotlight_hotkey_ref") and self._spotlight_hotkey_ref:
+                try:
+                    _kb.remove_hotkey(self._spotlight_hotkey_ref)
+                except Exception:
+                    pass
+                self._spotlight_hotkey_ref = None
+            if self._shortcut_spotlight:
+                self._spotlight_hotkey_ref = _kb.add_hotkey(
+                    self._shortcut_spotlight, self._trigger_spotlight
+                )
+        except Exception:
+            pass
+
+    def _trigger_spotlight(self):
+        """Appelé depuis le thread du hook clavier — on rebascule vers le thread Qt
+        avant d'ouvrir la fenêtre (obligatoire : une UI Qt ne peut pas être créée
+        depuis un autre thread que le thread principal)."""
+        enabled = getattr(self, "_mode_enabled", {}).get("spotlight", [True])
+        if not enabled[0]:
+            return
+        # Si l'overlay est déjà ouvert, c'est lui qui a le focus (plus Dofus) :
+        # on doit quand même laisser passer le raccourci pour pouvoir le
+        # refermer (toggle). is_dofus_foreground() ne sert de garde-fou que
+        # pour l'OUVERTURE d'un nouvel overlay.
+        overlay_open = getattr(self, "_spotlight_dialog", None) is not None
+        if not overlay_open and not is_dofus_foreground():
+            return
+        QMetaObject.invokeMethod(
+            self, "_open_spotlight_safe",
+            Qt.ConnectionType.QueuedConnection,
+        )
+
+    @pyqtSlot()
+    def _open_spotlight_safe(self):
+        open_spotlight(self)
+
+    # ------------------------------------------------------------------
     # Mode Déplacement
     # ------------------------------------------------------------------
 
@@ -488,11 +642,12 @@ class TabOutilsMixin:
         self._apply_shortcuts()
         # Plus besoin d'enregistrer le hotkey move — il a été retiré par _apply_shortcuts
 
-    def _toggle_move_mode(self):
-        # Vérifier que la checkbox de permission est cochée
-        enabled = getattr(self, "_mode_enabled", {}).get("deplacement", [True])
-        if not enabled[0]:
-            return
+    def _toggle_move_mode(self, force: bool = False):
+        # Vérifier que la checkbox de permission est cochée (sauf si forcé, ex. Spotlight)
+        if not force:
+            enabled = getattr(self, "_mode_enabled", {}).get("deplacement", [True])
+            if not enabled[0]:
+                return
         if not is_dofus_foreground():
             return
         self._move_manager.toggle()
@@ -830,13 +985,14 @@ class TabOutilsMixin:
         except Exception:
             pass
 
-    def _trigger_dradidas(self):
+    def _trigger_dradidas(self, force: bool = False):
         """Appelé quand le raccourci Puissance Sylvestre est pressé.
         Lit le pseudo de la fenêtre Dofus active et déclenche le compteur Dradidas.
         """
-        enabled = getattr(self, "_mode_enabled", {}).get("dradidas", [True])
-        if not enabled[0]:
-            return
+        if not force:
+            enabled = getattr(self, "_mode_enabled", {}).get("dradidas", [True])
+            if not enabled[0]:
+                return
         if not is_dofus_foreground():
             return
         try:
@@ -844,8 +1000,8 @@ class TabOutilsMixin:
             hwnd  = win32gui.GetForegroundWindow()
             title = win32gui.GetWindowText(hwnd)
             pseudo = extract_pseudo_from_title(title, hwnd)
-            if pseudo and self._dradidas_manager.is_sadida(pseudo):
-                self._dradidas_manager.trigger(pseudo)
+            if pseudo and (force or self._dradidas_manager.is_sadida(pseudo)):
+                self._dradidas_manager.trigger(pseudo, force=force)
                 remaining = self._dradidas_manager.get_skip_remaining(pseudo)
                 tours = "tour" if remaining <= 1 else "tours"
                 self.log_msg(
@@ -959,4 +1115,3 @@ class TabOutilsMixin:
             else:
                 badge.setText("")
                 badge.setStyleSheet("color: transparent; background: transparent;")
-
