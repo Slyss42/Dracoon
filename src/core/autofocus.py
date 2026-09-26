@@ -17,11 +17,16 @@ import time
 
 from PyQt6.QtCore import QTimer
 
-from core.config import WIN32_OK, WINSDK_OK, NOTIF_TYPES, _is_dofus_pid, TITLE_PATTERN, LOADING_PATTERN, shortened_titles
+from core.config import WIN32_OK, WINSDK_OK, NOTIF_TYPES, _is_dofus_pid, TITLE_PATTERN, LOADING_PATTERN, LAUNCH_PATTERN, RECONNECT_MAX_RETRY, shortened_titles
 from core.windows import focus_dofus_window, list_dofus_windows, extract_pseudo_from_title
 from core.icons import set_window_icon, _restore_original_icon
 try:
     import win32gui, win32process, win32con
+except Exception:
+    pass
+
+try:
+    import keyboard
 except Exception:
     pass
 
@@ -96,6 +101,53 @@ class AutoFocusCoreMixin:
             ctypes.windll.ole32.CoUninitialize()
 
     # ------------------------------------------------------------------
+    # Reconnexion automatique si crash au lancement (ctrl+r)
+    # ------------------------------------------------------------------
+
+    def _force_reconnect(self, hwnd: int):
+        try:
+            prev_fg = win32gui.GetForegroundWindow()
+            win32gui.SetForegroundWindow(hwnd)
+            keyboard.send("ctrl+r")
+            if prev_fg and prev_fg != hwnd:
+                win32gui.SetForegroundWindow(prev_fg)
+        except Exception as e:
+            self.log_msg(f"[crash_watch] Échec Ctrl+R sur hwnd={hwnd} : {e}", "debug")
+
+    def _check_crash_and_reconnect(self, hwnd: int, title: str):
+        if not self.reconnect_on_crash_var.get():
+            return
+        if hwnd in self._ever_loaded:
+            return
+
+        is_launch = bool(LAUNCH_PATTERN.match(title))
+
+        if not is_launch:
+            # A quitté l'état "lancement pur" (loading avec version, ou en jeu) → verrouillé à vie
+            self._ever_loaded.add(hwnd)
+            self._launch_tracking.pop(hwnd, None)
+            return
+
+        now = time.time()
+        track = self._launch_tracking.setdefault(hwnd, {"since": now, "retries": 0})
+
+        if hwnd in self._retry_exhausted:
+            return
+
+        if now - track["since"] > self._reconnect_timeout:
+            if track["retries"] < RECONNECT_MAX_RETRY:
+                track["retries"] += 1
+                track["since"] = now
+                self.log_msg(
+                    f"[crash_watch] Fenêtre {hwnd} bloquée en lancement "
+                    f"(tentative {track['retries']}/{RECONNECT_MAX_RETRY}) → Ctrl+R", "warn")
+                self._force_reconnect(hwnd)
+            else:
+                self._retry_exhausted.add(hwnd)
+                self.log_msg(
+                    f"[crash_watch] Fenêtre {hwnd} : abandon après {RECONNECT_MAX_RETRY} tentatives", "error")        
+
+    # ------------------------------------------------------------------
     # Surveillance des fenêtres (détection automatique + maximize)
     # ------------------------------------------------------------------
 
@@ -119,6 +171,9 @@ class AutoFocusCoreMixin:
                     return True
 
                 win32gui.EnumWindows(_cb, None)
+                
+                for hwnd, title in current.items():        # ← nouveau, HORS du if current != ...
+                    self._check_crash_and_reconnect(hwnd, title)
 
                 if current != self._window_snapshot:
                     new_hwnds  = set(current.keys()) - set(self._window_snapshot.keys())
@@ -144,6 +199,13 @@ class AutoFocusCoreMixin:
 
                     for hwnd in gone_hwnds:
                         shortened_titles.pop(hwnd, None)
+                        self._launch_tracking.pop(hwnd, None)     # ← nouveau
+                        self._ever_loaded.discard(hwnd)           # ← nouveau
+                        self._retry_exhausted.discard(hwnd)       # ← nouveau
+
+                    # Détection crash au lancement — toujours vérifié, même hors changement de titre
+                    for hwnd, title in current.items():          # ← nouveau bloc
+                        self._check_crash_and_reconnect(hwnd, title)
 
                     # Détection loading pattern — toujours actif
                     for hwnd, title in current.items():
