@@ -130,7 +130,39 @@
     "update.error":"La vérification de mise à jour a échoué : {error}",    
     "update.shasums_missing":"Erreur : Le fichier shasums.txt est manquant",
     "update.hash_mismatch":"Erreur : Le fichier téléchargé ne correspond pas au hash attendu.",
-    "update.apply_error":"Une erreur est survenue : {error}"   
+    "update.apply_error":"Une erreur est survenue : {error}",
+    
+    "spotlight.search_placeholder":"Rechercher une commande…",
+    "spotlight.show_all_actions":"Afficher toutes les actions",
+    "spotlight.hide_all_actions":"Masquer toutes les actions",
+    "spotlight.hint_navigation": "↑ ↓  naviguer      ↵  sélectionner      Esc  fermer",
+    "spotlight.cmd.show_window":"Afficher Dracoon",
+    "spotlight.cmd.move_deactivate": "Désactiver le mode déplacement",
+    "spotlight.cmd.move_activate": "Activer le mode déplacement",
+    "spotlight.cmd.dradidas_activate": "Activer le mode Dradidas",
+    "spotlight.cmd.autofocus_off": "Désactiver l'autofocus",
+    "spotlight.cmd.autofocus_on": "Activer l'autofocus",
+    "spotlight.cmd.tab_personnages": "Ouvrir l'onglet Personnages",
+    "spotlight.cmd.tab_raccourcis": "Ouvrir l'onglet Raccourcis",
+    "spotlight.cmd.tab_outils": "Ouvrir l'onglet Outils",
+    "spotlight.cmd.tab_parametres": "Ouvrir l'onglet Paramètres",
+    "spotlight.cmd.tab_info": "Ouvrir l'onglet Info",
+    "spotlight.cmd.preset_load": "Charger le preset",
+
+    "spotlight.cmd.ctrlshift_activate": "Activer maintient Ctrl+Maj",
+    "spotlight.cmd.ctrlshift_deactivate": "Désactiver maintien Ctrl+Maj",
+    "spotlight.cmd.focus_main": "Afficher le personnage principal",
+    "spotlight.cmd.focus_back": "Afficher la dernière fenêtre focus",
+
+    "spotlight.filter_all":"Tout",
+    "spotlight.cat.navigation":"Navigation",
+    "spotlight.cat.toggles":"Mode",
+    "spotlight.cat.presets":"Presets",
+    "spotlight.cat.actions":"Actions",
+
+    "tab.parametres.reconnect.title": "Relancer automatiquement après un crash",
+    "tab.parametres.reconnect.description": "Relance automatiquement le compte qui ne se lance pas au démarrage."
+    
   },
 
   "en": {
@@ -263,7 +295,39 @@
     "update.error":"Update check failed: {error}",
     "update.shasums_missing":"Error: shasums.txt file is missing",
     "update.hash_mismatch":"Error: downloaded file does not match expected hash.",
-    "update.apply_error":"An error occurred: {error}"   
+    "update.apply_error":"An error occurred: {error}",
+
+    "spotlight.search_placeholder": "Search for a command…",
+    "spotlight.show_all_actions": "Show all actions",
+    "spotlight.hide_all_actions": "Hide all actions",
+    "spotlight.hint_navigation": "↑ ↓  navigate      ↵  select      Esc  close",
+    "spotlight.cmd.show_window": "Show Dracoon",
+    "spotlight.cmd.move_deactivate": "Disable move mode",
+    "spotlight.cmd.move_activate": "Enable move mode",
+    "spotlight.cmd.dradidas_activate": "Enable Dradidas mode",
+    "spotlight.cmd.autofocus_off": "Disable autofocus",
+    "spotlight.cmd.autofocus_on": "Enable autofocus",
+    "spotlight.cmd.tab_personnages": "Open the Characters tab",
+    "spotlight.cmd.tab_raccourcis": "Open the Shortcuts tab",
+    "spotlight.cmd.tab_outils": "Open the Tools tab",
+    "spotlight.cmd.tab_parametres": "Open the Settings tab",
+    "spotlight.cmd.tab_info": "Open the Info tab",
+    "spotlight.cmd.preset_load": "Load the preset",
+
+    "spotlight.cmd.ctrlshift_activate": "Enable Ctrl+Shift hold",
+    "spotlight.cmd.ctrlshift_deactivate": "Disable Ctrl+Shift hold",
+    "spotlight.cmd.focus_main": "Show the main character",
+    "spotlight.cmd.focus_back": "Show the last focused window",
+
+    "spotlight.filter_all": "All",
+    "spotlight.cat.navigation": "Navigation",
+    "spotlight.cat.toggles": "Mode",
+    "spotlight.cat.presets": "Presets",
+    "spotlight.cat.actions": "Actions",
+    
+
+    "tab.parametres.reconnect.title": "Automatically relaunch after a crash",
+    "tab.parametres.reconnect.description": "Automatically relaunches an account that fails to start up."
   },
 
   "es": {
@@ -395,6 +459,38 @@
     "update.error":"La verificación de actualización falló: {error}",
     "update.shasums_missing":"Error: falta el archivo shasums.txt",
     "update.hash_mismatch":"Error: el archivo descargado no coincide con el hash esperado",
-    "update.apply_error":"Ocurrió un error: {error}"
+    "update.apply_error":"Ocurrió un error: {error}",
+    
+    "spotlight.search_placeholder": "Buscar un comando…",
+    "spotlight.show_all_actions": "Mostrar todas las acciones",
+    "spotlight.hide_all_actions": "Ocultar todas las acciones",
+    "spotlight.hint_navigation": "↑ ↓  navegar      ↵  seleccionar      Esc  cerrar",
+    "spotlight.cmd.show_window": "Mostrar Dracoon",
+    "spotlight.cmd.move_deactivate": "Desactivar el modo de desplazamiento",
+    "spotlight.cmd.move_activate": "Activar el modo de desplazamiento",
+    "spotlight.cmd.dradidas_activate": "Activar el modo Dradidas",
+    "spotlight.cmd.autofocus_off": "Desactivar el autofoco",
+    "spotlight.cmd.autofocus_on": "Activar el autofoco",
+    "spotlight.cmd.tab_personnages": "Abrir la pestaña Personajes",
+    "spotlight.cmd.tab_raccourcis": "Abrir la pestaña Atajos",
+    "spotlight.cmd.tab_outils": "Abrir la pestaña Herramientas",
+    "spotlight.cmd.tab_parametres": "Abrir la pestaña Ajustes",
+    "spotlight.cmd.tab_info": "Abrir la pestaña Información",
+    "spotlight.cmd.preset_load": "Cargar el preset",
+
+    "spotlight.cmd.ctrlshift_activate": "Activar mantenimiento de Ctrl+Mayús",
+    "spotlight.cmd.ctrlshift_deactivate": "Desactivar mantenimiento de Ctrl+Mayús",
+    "spotlight.cmd.focus_main": "Mostrar el personaje principal",
+    "spotlight.cmd.focus_back": "Mostrar la última ventana enfocada",
+
+    "spotlight.filter_all": "Todo",
+    "spotlight.cat.navigation": "Navegación",
+    "spotlight.cat.toggles": "Modo",
+    "spotlight.cat.presets": "Presets",
+    "spotlight.cat.actions": "Acciones",
+
+    "tab.parametres.reconnect.title": "Reiniciar automáticamente tras un fallo",
+    "tab.parametres.reconnect.description": "Reinicia automáticamente la cuenta que no logra iniciarse."
+
   }
 }
