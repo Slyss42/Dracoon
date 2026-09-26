@@ -17,7 +17,7 @@ import winreg
 # ─── Type build ─────────────────────────────────────────────────────────
 APP_UPDATE_MODE = "onefile"  # ou "onedir" ou "onefile" — à changer manuellement selon le build (voir README_UPDATER.md §5)
 # ─── Onglet Info ─────────────────────────────────────────────────────────
-APP_VERSION = "4.0.0"
+APP_VERSION = "4.0.5"
 APP_GITHUB  = "https://github.com/Slyss42/Dracoon"
 APP_TWITTER = "https://x.com/Slyss42"
 
@@ -61,6 +61,7 @@ except Exception:
 # ─── Constantes pour Logique Personnages──────────────────
 TITLE_PATTERN   = re.compile(r"^(.+?)\s*-\s*Dofus", re.IGNORECASE)
 LOADING_PATTERN = re.compile(r"^Dofus Retro\b",      re.IGNORECASE)
+LAUNCH_PATTERN = re.compile(r"^Dofus Retro\s*$", re.IGNORECASE)
 shortened_titles: dict[int, tuple[str, str]] = {}
 
 def _is_dofus_pid(pid: int) -> bool:
@@ -85,6 +86,10 @@ class _PROPVARIANT(ctypes.Structure):
 
 VT_LPWSTR, VT_EMPTY = 31, 0
 _DOFUS_GROUP_ID = "DofusRetro.SharedGroup"
+
+# ─── Reconnexion automatique si crash au lancement ───────────────────────────
+DEFAULT_RECONNECT_TIMEOUT = 6   # secondes, valeur par défaut si jamais configurée
+RECONNECT_MAX_RETRY       = 3
 
 # ─── Icônes de classe (barre des tâches par personnage) ──────────────────────
 # Couleurs prédéfinies (hex sans #)
@@ -272,7 +277,10 @@ def build_config(shortcut_next, shortcut_prev, shortcut_back,
                   shortcut_move=None,
                   move_overlay=True, move_cycle_delay: int = 95, move_enabled=True,
                   dradidas_enabled=True, dradidas_turns=3, dradidas_sadidas=None, shortcut_dradidas=None, shortcut_ctrl_shift=None, lang="fr",shorten_title=False, char_icons=None,
-                  check_update_on_launch=True) -> dict: 
+                  check_update_on_launch=True, shortcut_spotlight=None,
+                  spotlight_enabled=True,
+                  reconnect_on_crash=True, reconnect_timeout=6) -> dict:
+                 
     return {
         "shortcut_next":     shortcut_next,
         "shortcut_prev":     shortcut_prev,
@@ -294,10 +302,14 @@ def build_config(shortcut_next, shortcut_prev, shortcut_back,
         "dradidas_sadidas":  json.dumps(sorted(dradidas_sadidas or []), ensure_ascii=False),
         "shortcut_dradidas": shortcut_dradidas,
         "shortcut_ctrl_shift": shortcut_ctrl_shift,
+        "shortcut_spotlight": shortcut_spotlight,
+        "spotlight_enabled": "1" if spotlight_enabled else "0",
         "lang": lang,
         "shorten_title": "1" if shorten_title else "0",
         "char_icons":    _encode_char_icons(char_icons or {}),
         "check_update_on_launch": "1" if check_update_on_launch else "0",
+        "reconnect_on_crash": "1" if reconnect_on_crash else "0",
+        "reconnect_timeout":  str(reconnect_timeout)
     }
 
 def load_config() -> dict:
