@@ -1,43 +1,44 @@
 """
-UI_Tab_Outils.py
-Onglet « Outils » — modes de jeu activables (Déplacement, Dradidas, ...).
-
-Ce fichier ne contient que la construction et le câblage de l'UI.
-La logique de chaque mode vit dans core/movemode.py et core/dradidasmode.py
-et n'est pas modifiée ici.
+UI_Tab_Parametres.py
+Onglet « Paramètres » — options générales de l'application.
 """
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QPushButton, QFrame, QLineEdit,
-    QScrollArea, QSpinBox,
+    QLabel, QFrame, QScrollArea, QSpinBox, QAbstractSpinBox, QToolButton,
 )
-from PyQt6.QtCore import Qt, QEvent, QObject, QMetaObject, pyqtSlot, QTimer
-from PyQt6.QtGui import QFont, QCursor, QKeySequence, QKeyEvent
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QCursor
 
-from core.config import KEYBOARD_OK
+from core.shortcuts import _unhook_all
+from core.config import _REG_PATH, build_config
 from core.i18n import t
 
-from core.windows import is_dofus_foreground, extract_pseudo_from_title
+from core.windows import apply_shorten_titles
+
+import winreg
+
+try:
+    import keyboard
+except Exception:
+    pass
 
 
-from UI_Spotlight import open_spotlight
 
-class TabOutilsMixin:
+class TabParametresMixin:
     """
     Mixin pour la classe App.
-    Fournit : _build_tab_outils — onglet « Outils » regroupant les modes
-    activables (Déplacement, Dradidas, ...).
+    Fournit : _build_tab_parametres, _reset_config.
     """
 
     # ------------------------------------------------------------------
     # Construction de l'onglet
     # ------------------------------------------------------------------
 
-    def _build_tab_outils(self):
+    def _build_tab_parametres(self):
         f = QWidget()
         f.setStyleSheet(f"background-color: {self.BG};")
-        self._tab_frames["outils"] = f
+        self._tab_frames["parametres"] = f
         self._content.addWidget(f)
 
         layout = QVBoxLayout(f)
@@ -51,12 +52,12 @@ class TabOutilsMixin:
         top_layout.setContentsMargins(16, 12, 16, 12)
         top_layout.setSpacing(2)
 
-        lbl_titre = QLabel(t("tab.outils.title"))
+        lbl_titre = QLabel(t("tab.parametres.title"))
         lbl_titre.setFont(self.S.EnTete.font)
         lbl_titre.setStyleSheet(f"color: {self.TEXT};")
         top_layout.addWidget(lbl_titre)
 
-        lbl_sub = QLabel(t("tab.outils.description"))
+        lbl_sub = QLabel(t("tab.parametres.description"))
         lbl_sub.setFont(self.S.Info.font)
         lbl_sub.setStyleSheet(f"color: {self.GRAY};")
         top_layout.addWidget(lbl_sub)
@@ -74,1044 +75,290 @@ class TabOutilsMixin:
         """)
         inner = QWidget()
         inner.setStyleSheet(f"background-color: {self.BG};")
-        self._outils_layout = QVBoxLayout(inner)
-        self._outils_layout.setContentsMargins(16, 4, 16, 16)
-        self._outils_layout.setSpacing(6)
-        self._outils_layout.addStretch()
+        self._modes_layout = QVBoxLayout(inner)
+        self._modes_layout.setContentsMargins(16, 4, 16, 16)
+        self._modes_layout.setSpacing(6)
+        self._modes_layout.addStretch()
         scroll.setWidget(inner)
         layout.addWidget(scroll, stretch=1)
 
-                # --- Initialisation des cartes ---
-        # NB : self._move_manager et self._move_overlay sont déjà créés une
-        # seule fois dans Main.py.__init__ (pour être actifs dès le lancement,
-        # sans dépendre de l'ouverture de cet onglet). Ne PAS les recréer ici
-        # sous peine d'avoir deux MoveModeManager indépendants (deux hooks
-        # souris, réglages désynchronisés, overlay qui ne réagit jamais au
-        # bon état).
-        if not hasattr(self, "_mode_panels"):
-            self._mode_panels = {}
-            self._mode_arrows = {}
-
-        self._build_mode_spotlight()
         
-        self._build_mode_deplacement()
-        #self._move_hotkey_ref = None
-        #QTimer.singleShot(500, self._register_move_hotkey)
 
-        self._build_mode_dradidas()
-        #self._dradidas_hotkey_ref = None
-        #QTimer.singleShot(500, self._register_dradidas_hotkey)
+        # --- Helper ligne de paramètre ---
+        def _param_row(label: str, sublabel: str, variable, on_change=None):
+            container = QWidget()
+            container.setStyleSheet("background: transparent;")
+            c_layout = QHBoxLayout(container)
+            c_layout.setContentsMargins(0, 4, 0, 4)
 
+            card = QFrame()
+            card.setStyleSheet(f"background-color: {self.CARD}; border-radius: 4px;")
+            card.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(0)
 
-    def _build_mode_card(
-            self,
-            mode_id: str,
-            icon: str,
-            title: str,
-            subtitle: str,
-            is_active_fn,        # callable() → bool
-            toggle_fn,           # callable() → None
-            build_content_fn,    # callable(parent_layout) → None
-        ) -> QFrame:
-            """
-            Crée une carte accordion.
-            Retourne le QFrame racine.
-            """
-
-            root = QFrame()
-            root.setStyleSheet(f"background-color: {self.CARD}; border-radius: 6px;")
-            root_layout = QVBoxLayout(root)
-            root_layout.setContentsMargins(0, 0, 0, 0)
-            root_layout.setSpacing(0)
-
-            # ── Header de la carte ──────────────────────────────────────────
-            header = QWidget()
-            header.setStyleSheet("background: transparent;")
-            header.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-            header_layout = QHBoxLayout(header)
-            header_layout.setContentsMargins(14, 12, 14, 12)
-            header_layout.setSpacing(0)
-
-            # Icône invisible (réservation d'espace supprimée — plus d'icône dupliquée)
-
-            # Texte titre + sous-titre
             info = QWidget()
             info.setStyleSheet("background: transparent;")
+            info.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
             info_layout = QVBoxLayout(info)
             info_layout.setContentsMargins(0, 0, 0, 0)
-            info_layout.setSpacing(1)
+            info_layout.setSpacing(2)
 
-            # Titre avec icône intégrée
-            lbl_title = QLabel(f"{icon}  {title}")
-            lbl_title.setFont(self.S.Bouton.font_principal)
-            lbl_title.setStyleSheet(f"color: {self.TEXT}; background: transparent;")
-            info_layout.addWidget(lbl_title)
+            lbl_main = QLabel(label)
+            lbl_main.setFont(self.S.Bouton.font_principal)
+            lbl_main.setStyleSheet(f"color: {self.TEXT}; background: transparent;")
+            info_layout.addWidget(lbl_main)
 
-            lbl_sub = QLabel(subtitle)
-            lbl_sub.setFont(self.S.Info.font)
-            lbl_sub.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
-            info_layout.addWidget(lbl_sub)
+            if sublabel:
+                lbl_sl = QLabel(sublabel)
+                lbl_sl.setFont(self.S.Info.font)
+                lbl_sl.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
+                info_layout.addWidget(lbl_sl)
 
-            header_layout.addWidget(info, stretch=1)
+            card_layout.addWidget(info, stretch=1)
 
-            # ── Checkbox permission (QLabel cliquable) ─────────────────────
-            # La checkbox n'active/désactive PAS le mode directement.
-            # Elle sert de permission : si cochée, le raccourci peut toggler le mode.
-            _MODE_ENABLED_ATTR = {
-                "deplacement": "_move_enabled",
-                "dradidas":    "_dradidas_enabled",
-                "spotlight":   "_spotlight_enabled",
-            }
-            enabled_attr = _MODE_ENABLED_ATTR.get(mode_id, f"_{mode_id}_enabled")
-            _cb_enabled = [getattr(self, enabled_attr, True)]   # état mutable dans la closure
+            # Checkbox visuelle (droite)
+            cb_lbl = QLabel()
+            cb_lbl.setFont(self.S.Bouton.font_principal.__class__("Segoe UI", 18))
+            cb_lbl.setStyleSheet("background: transparent;")
+            cb_lbl.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            card_layout.addWidget(cb_lbl)
 
-            def _cb_text():
-                return "☑" if _cb_enabled[0] else "☐"
+            def _refresh():
+                cb_lbl.setText("☑" if variable.get() else "☐")
+                cb_lbl.setStyleSheet(
+                    f"color: {self.ACCENT}; background: transparent; font-size: 18px;"
+                    if variable.get() else
+                    f"color: {self.GRAY}; background: transparent; font-size: 18px;"
+                )
 
-            def _cb_color():
-                return self.ACCENT if _cb_enabled[0] else self.GRAY
-
-            toggle_cb = QLabel(_cb_text())
-            toggle_cb.setFont(QFont("Segoe UI", 13))
-            toggle_cb.setStyleSheet(f"color: {_cb_color()}; background: transparent; font-size: 18px;")
-            toggle_cb.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-            toggle_cb.setFixedWidth(22)
-
-            def _on_cb_click(event=None):
-                _cb_enabled[0] = not _cb_enabled[0]
-                setattr(self, enabled_attr, _cb_enabled[0])
+            def _toggle(event, _on_change=on_change):
+                variable.set(not variable.get())
+                _refresh()
                 self._persist_config()
-                toggle_cb.setText(_cb_text())
-                toggle_cb.setStyleSheet(f"color: {_cb_color()}; background: transparent;")
-                # Si on décoche alors que le mode est actif, on le désactive
-                if not _cb_enabled[0] and is_active_fn():
-                    toggle_fn()
-                    if hasattr(self, "_mode_checkboxes"):
-                        self._mode_checkboxes[mode_id] = _cb_enabled
-                event.accept()   # stopper la propagation vers le header
-                
+                if _on_change:
+                    _on_change(variable.get())
 
-            toggle_cb.mousePressEvent = _on_cb_click
+            _refresh()
 
-            # Stocker la ref à l'état pour _toggle_move_mode
-            if not hasattr(self, "_mode_enabled"):
-                self._mode_enabled = {}
-            self._mode_enabled[mode_id] = _cb_enabled
+            for w in [card, info, cb_lbl, lbl_main] + ([lbl_sl] if sublabel else []):
+                w.mousePressEvent = _toggle
 
-            header_layout.addWidget(toggle_cb)
-            header_layout.addSpacing(12)
+            c_layout.addWidget(card)
+            self._modes_layout.insertWidget(self._modes_layout.count() - 1, container)
 
-            # Flèche déroulement           
-            arrow_lbl = QLabel("▸") # au lieu de ▶
-            arrow_lbl.setStyleSheet(f"color: {self.GRAY}; background: transparent; font-size: 20pt; font-family: Segoe UI;")
-            arrow_lbl.setFixedWidth(40)
-            arrow_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            header_layout.addWidget(arrow_lbl)
+        # --- Helper ligne de paramètre : checkbox + spinbox sur la même ligne ---
+        def _param_row_with_timeout(label: str, sublabel: str, variable,
+                                     get_value, set_value,
+                                     minimum=1, maximum=300, suffix=" s"):
+            container = QWidget()
+            container.setStyleSheet("background: transparent;")
+            c_layout = QHBoxLayout(container)
+            c_layout.setContentsMargins(0, 4, 0, 4)
 
-            root_layout.addWidget(header)
+            card = QFrame()
+            card.setStyleSheet(f"background-color: {self.CARD}; border-radius: 4px;")
+            card.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            card_layout = QHBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            card_layout.setSpacing(10)
 
-            # ── Panneau déroulant ───────────────────────────────────────────
-            panel = QWidget()
-            panel.setStyleSheet(f"background-color: #151a27; border-radius: 0px 0px 6px 6px;")
-            panel.setVisible(False)
-            panel_layout = QVBoxLayout(panel)
-            panel_layout.setContentsMargins(16, 14, 16, 16)
-            panel_layout.setSpacing(14)
+            info = QWidget()
+            info.setStyleSheet("background: transparent;")
+            info.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            info_layout = QVBoxLayout(info)
+            info_layout.setContentsMargins(0, 0, 0, 0)
+            info_layout.setSpacing(2)
 
-            # Séparateur haut
-            sep = QFrame()
-            sep.setFixedHeight(1)
-            sep.setStyleSheet(f"background-color: {self.CARD};")
-            panel_layout.addWidget(sep)
+            lbl_main = QLabel(label)
+            lbl_main.setFont(self.S.Bouton.font_principal)
+            lbl_main.setStyleSheet(f"color: {self.TEXT}; background: transparent;")
+            info_layout.addWidget(lbl_main)
 
-            # Contenu spécifique au mode
-            build_content_fn(panel_layout)
+            if sublabel:
+                lbl_sl = QLabel(sublabel)
+                lbl_sl.setFont(self.S.Info.font)
+                lbl_sl.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
+                info_layout.addWidget(lbl_sl)
 
-            root_layout.addWidget(panel)
+            card_layout.addWidget(info, stretch=1)
 
-            # ── Clic sur le header → dérouler/enrouler ─────────────────────
-            def _on_header_click(event):
-                if panel.isVisible():
-                    panel.setVisible(False)
-                    arrow_lbl.setText("▸")
-                    arrow_lbl.setStyleSheet(f"color: {self.GRAY}; background: transparent; font-size: 20pt; font-family: Segoe UI;")
-
-                else:
-                    panel.setVisible(True)
-                    arrow_lbl.setText("▾")
-                    arrow_lbl.setStyleSheet(f"color: {self.GRAY}; background: transparent; font-size: 20pt; font-family: Segoe UI;")
-
-                    
-
-            # Stocker refs pour usage externe
-            if not hasattr(self, "_mode_panels"):
-                self._mode_panels = {}
-                self._mode_arrows = {}
-            self._mode_panels[mode_id]  = panel
-            self._mode_arrows[mode_id]  = arrow_lbl
-            # Garder une ref à la checkbox pour rafraîchissement externe
-            if not hasattr(self, "_mode_checkboxes"):
-                self._mode_checkboxes = {}
-            self._mode_checkboxes[mode_id] = toggle_cb
-
-            for w in [header, lbl_title, lbl_sub, arrow_lbl, info]:
-                w.mousePressEvent = _on_header_click
-
-            # Insérer avant le stretch
-            idx = self._outils_layout.count() - 1
-            self._outils_layout.insertWidget(idx, root)
-            return root
-
-        # ------------------------------------------------------------------
-        # Helper : ligne de paramètre inline (dans le panneau déroulant)
-        # ------------------------------------------------------------------
-
-    def _mode_param_label(self, layout: QVBoxLayout, text: str):
-        lbl = QLabel(text)
-        lbl.setFont(self.S.Info.font)
-        lbl.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
-        layout.addWidget(lbl)
-
-    def _mode_shortcut_entry(
-        self, layout: QVBoxLayout, label: str, current: str | None, which: str
-    ) -> QLineEdit:
-        """Ligne raccourci compacte pour panneau déroulant."""
-        row = QWidget()
-        row.setStyleSheet("background: transparent;")
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(8)
-
-        lbl = QLabel(label)
-        lbl.setFont(self.S.Info.font)
-        lbl.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
-        row_layout.addWidget(lbl, stretch=1)
-
-        display = "Aucun" if current is None else current
-        color   = self.GRAY if current is None else self.ACCENT
-
-        entry = QLineEdit(display)
-        entry.setFont(QFont("Consolas", 10))
-        entry.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        entry.setFixedWidth(120)
-        entry.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: #252b3b;
-                color: {color};
-                border: none;
-                border-radius: 4px;
-                padding: 4px;
-            }}
-        """)
-        if which == "move":
-            entry.focusInEvent = lambda e, en=entry: self._start_capture_move(en)
-        elif which == "dradidas":
-            entry.focusInEvent = lambda e, en=entry: self._start_capture_dradidas(en) 
-        elif which == "spotlight":
-            entry.focusInEvent = lambda e, en=entry: self._start_capture_spotlight(en)
-        else:
-            entry.focusInEvent = lambda e, w=which, en=entry: self._start_capture(en, w)
-        row_layout.addWidget(entry)
-
-        btn_aucun = QPushButton("Aucun")
-        btn_aucun.setFont(self.S.Bouton.font_petit)
-        btn_aucun.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn_aucun.setFlat(True)
-        btn_aucun.setStyleSheet(f"""
-            QPushButton {{
-                background-color: #252b3b;
-                color: {self.GRAY};
-                border: none;
-                border-radius: 4px;
-                padding: 4px 10px;
-            }}
-            QPushButton:hover {{ color: {self.TEXT}; }}
-        """)
-        if which == "move":
-            btn_aucun.clicked.connect(self._set_no_shortcut_move)
-        elif which == "dradidas":
-            btn_aucun.clicked.connect(self._set_no_shortcut_dradidas)
-        elif which == "spotlight":
-            btn_aucun.clicked.connect(self._set_no_shortcut_spotlight)
-        else:
-            btn_aucun.clicked.connect(lambda checked=False, w=which: self._set_no_shortcut(w))
-        row_layout.addWidget(btn_aucun)
-
-        layout.addWidget(row)
-        return entry
-
-    def _mode_toggle_row(
-        self, layout: QVBoxLayout, label: str, variable
-    ):
-        """Ligne toggle (label à gauche, checkbox à droite) pour panneau déroulant."""
-        row = QWidget()
-        row.setStyleSheet("background: transparent;")
-        row.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(8)
-
-        lbl = QLabel(label)
-        lbl.setFont(self.S.Info.font)
-        lbl.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
-        row_layout.addWidget(lbl, stretch=1)
-
-        # Checkbox à droite
-        cb = QLabel("☑" if variable.get() else "☐")
-        cb.setFont(QFont("Segoe UI", 11))
-        cb.setStyleSheet(
-            f"color: {self.ACCENT}; background: transparent; font-size: 18px;"
-            if variable.get() else
-            f"color: {self.GRAY}; background: transparent; font-size: 18px;"
-        )
-        row_layout.addWidget(cb)
-
-        def _toggle(event=None):
-            variable.set(not variable.get())
-            cb.setText("☑" if variable.get() else "☐")
-            cb.setStyleSheet(
-                f"color: {self.ACCENT}; background: transparent; font-size: 18px;"
-                if variable.get() else
-                f"color: {self.GRAY}; background: transparent; font-size: 18px;"
-            )
-            self._persist_config()
-
-        for w in [row, cb, lbl]:
-            w.mousePressEvent = _toggle
-
-        layout.addWidget(row)
-
-    def _mode_spinbox_row(
-        self, layout: QVBoxLayout, label: str,
-        min_val: int, max_val: int, current: int,
-        unit: str, on_change  # callable(int)
-    ) -> QSpinBox:
-        """Ligne avec entrée numérique (spinbox) pour panneau déroulant."""
-        row = QWidget()
-        row.setStyleSheet("background: transparent;")
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(8)
-
-        lbl = QLabel(label)
-        lbl.setFont(self.S.Info.font)
-        lbl.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
-        row_layout.addWidget(lbl, stretch=1)
-
-        spinbox = QSpinBox()
-        spinbox.setMinimum(min_val)
-        spinbox.setMaximum(max_val)
-        spinbox.setValue(current)
-        spinbox.setSuffix(f" {unit}")
-        spinbox.setFont(QFont("Consolas", 10))
-        spinbox.setFixedWidth(90)
-        spinbox.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        spinbox.setStyleSheet(f"""
-            QSpinBox {{
-                background-color: #252b3b;
-                color: {self.ACCENT};
-                border: none;
-                border-radius: 4px;
-                padding: 4px 6px;
-            }}
-            QSpinBox::up-button, QSpinBox::down-button {{
-                background-color: #1a1f2e;
-                border: none;
-                width: 16px;
-            }}
-            QSpinBox::up-button:hover, QSpinBox::down-button:hover {{
-                background-color: {self.ACCENT};
-            }}
-            QSpinBox::up-arrow {{
-                image: none;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-bottom: 5px solid {self.GRAY};
-                width: 0; height: 0;
-            }}
-            QSpinBox::down-arrow {{
-                image: none;
-                border-left: 4px solid transparent;
-                border-right: 4px solid transparent;
-                border-top: 5px solid {self.GRAY};
-                width: 0; height: 0;
-            }}
-        """)
-
-        def _on_value(val: int):
-            on_change(val)
-            self._persist_config()
-
-        spinbox.valueChanged.connect(_on_value)
-        row_layout.addWidget(spinbox)
-        layout.addWidget(row)
-        return spinbox
-
-    # ------------------------------------------------------------------
-    # Mode Recherche rapide (Spotlight)
-    # ------------------------------------------------------------------
-
-    def _build_mode_spotlight(self):
-
-        def _build_content(panel_layout: QVBoxLayout):
-            self._spotlight_shortcut_entry_mode = self._mode_shortcut_entry(
-                panel_layout, "Raccourci", self._shortcut_spotlight, "spotlight"
-            )
-
-        self._build_mode_card(
-            mode_id          = "spotlight",
-            icon             = "🔍",
-            title            = "Recherche rapide",
-            subtitle         = "Ouvre une palette de commande pour naviguer ou lancer une action",
-            is_active_fn     = lambda: False,   # pas d'état actif/inactif — juste un déclencheur
-            toggle_fn        = lambda: None,
-            build_content_fn = _build_content,
-        )
-
-    def _set_no_shortcut_spotlight(self):
-        self._shortcut_spotlight = None
-        if hasattr(self, "_spotlight_shortcut_entry_mode"):
-            self._spotlight_shortcut_entry_mode.setText("Aucun")
-            self._spotlight_shortcut_entry_mode.setStyleSheet(f"""
-                QLineEdit {{
-                    background-color: #252b3b;
-                    color: {self.GRAY};
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px;
-                }}
-            """)
-        self._apply_shortcuts()
-        self._register_spotlight_hotkey()
-
-    def _start_capture_spotlight(self, entry: QLineEdit):
-        """Capture de touche dédiée au raccourci de la Recherche rapide."""
-        entry.setText("Appuyez…")
-        entry.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: #252b3b;
-                color: {self.GRAY};
-                border: none;
-                border-radius: 4px;
-                padding: 4px;
-            }}
-        """)
-
-        def on_key(event: QKeyEvent):
-            mod_keys = {
-                Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt,
-                Qt.Key.Key_Meta, Qt.Key.Key_CapsLock,
-                Qt.Key.Key_Super_L, Qt.Key.Key_Super_R,
-            }
-            k = event.key()
-            if k in mod_keys:
-                return
-            mods = []
-            if event.modifiers() & Qt.KeyboardModifier.ControlModifier: mods.append("ctrl")
-            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:   mods.append("shift")
-            if event.modifiers() & Qt.KeyboardModifier.AltModifier:     mods.append("alt")
-            key_name = QKeySequence(k).toString().lower()
-            combo = "+".join(mods + [key_name]) if mods else key_name
-
-            self._shortcut_spotlight = combo
-            entry.setText(combo)
-            entry.setStyleSheet(f"""
-                QLineEdit {{
-                    background-color: #252b3b;
+                        # --- Spinbox (sans boutons natifs) ---
+            spin = QSpinBox()
+            spin.setRange(minimum, maximum)
+            spin.setSuffix(suffix)
+            spin.setValue(get_value())
+            spin.setFixedWidth(70)
+            spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            spin.setButtonSymbols(QAbstractSpinBox.ButtonSymbols.NoButtons)   # ← plus de boutons natifs
+            spin.setStyleSheet(f"""
+                QSpinBox {{
+                    background-color: {self.PANEL};
                     color: {self.ACCENT};
-                    border: none;
+                    border: 1px solid {self.GRAY};
                     border-radius: 4px;
-                    padding: 4px;
+                    padding: 4px 2px;
                 }}
             """)
-            entry.removeEventFilter(self._spotlight_capture_filter)
-            self._spotlight_capture_filter = None
-            self.setFocus()
-            self._apply_shortcuts()
-            self._register_spotlight_hotkey()
 
-        class _KeyFilter(QObject):
-            def __init__(self, cb):
-                super().__init__()
-                self._cb = cb
-            def eventFilter(self, obj, evt):
-                if evt.type() == QEvent.Type.KeyPress:
-                    self._cb(evt)
-                    return True
-                return False
+            def _on_spin_change(value):
+                set_value(value)
+                self._persist_config()
 
-        self._spotlight_capture_filter = _KeyFilter(on_key)
-        entry.installEventFilter(self._spotlight_capture_filter)
+            spin.valueChanged.connect(_on_spin_change)
 
-    def _register_spotlight_hotkey(self):
-        """Enregistre (ou retire) le hotkey Spotlight indépendamment des autres raccourcis."""
-        if not KEYBOARD_OK:
-            return
+            # --- Boutons custom haut/bas ---
+            arrows = QWidget()
+            arrows.setStyleSheet("background: transparent;")
+            arrows_layout = QVBoxLayout(arrows)
+            arrows_layout.setContentsMargins(4, 0, 0, 0)
+            arrows_layout.setSpacing(2)
+
+            btn_up   = QToolButton()
+            btn_down = QToolButton()
+            btn_up.setText("▲")
+            btn_down.setText("▼")
+            for b in (btn_up, btn_down):
+                b.setFixedSize(18, 13)
+                b.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+                b.setStyleSheet(f"""
+                    QToolButton {{
+                        background-color: {self.PANEL};
+                        color: {self.GRAY};
+                        border: 1px solid {self.GRAY};
+                        border-radius: 2px;
+                        font-size: 7px;
+                    }}
+                    QToolButton:hover {{
+                        background-color: rgba(255, 255, 255, 0.08);
+                        color: {self.ACCENT};
+                    }}
+                """)
+
+            btn_up.clicked.connect(spin.stepUp)
+            btn_down.clicked.connect(spin.stepDown)
+
+            arrows_layout.addWidget(btn_up)
+            arrows_layout.addWidget(btn_down)
+
+            spin_container = QWidget()
+            spin_container.setStyleSheet("background: transparent;")
+            spin_row = QHBoxLayout(spin_container)
+            spin_row.setContentsMargins(0, 0, 0, 0)
+            spin_row.setSpacing(0)
+            spin_row.addWidget(spin)
+            spin_row.addWidget(arrows)
+
+            card_layout.addWidget(spin_container)
+
+            # --- Checkbox visuelle (droite) ---
+            cb_lbl = QLabel()
+            cb_lbl.setFont(self.S.Bouton.font_principal.__class__("Segoe UI", 18))
+            cb_lbl.setStyleSheet("background: transparent;")
+            cb_lbl.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
+            card_layout.addWidget(cb_lbl)
+
+            def _refresh():
+                cb_lbl.setText("☑" if variable.get() else "☐")
+                cb_lbl.setStyleSheet(
+                    f"color: {self.ACCENT}; background: transparent; font-size: 18px;"
+                    if variable.get() else
+                    f"color: {self.GRAY}; background: transparent; font-size: 18px;"
+                )
+
+            def _toggle(event):
+                variable.set(not variable.get())
+                _refresh()
+                self._persist_config()
+
+            _refresh()
+
+            for w in [card, info, cb_lbl, lbl_main] + ([lbl_sl] if sublabel else []):
+                w.mousePressEvent = _toggle
+
+            c_layout.addWidget(card)
+            self._modes_layout.insertWidget(self._modes_layout.count() - 1, container)
+
+        _param_row(
+            t("tab.parametres.banner.title"),
+            t("tab.parametres.banner.description"),
+            self.remove_notif_var,
+        )
+        _param_row(
+            t("tab.parametres.maximize.title"),
+            t("tab.parametres.maximize.description"),
+            self.maximize_on_launch_var,
+        )
+
+        _param_row_with_timeout(
+            t("tab.parametres.reconnect.title"),
+            t("tab.parametres.reconnect.description"),
+            self.reconnect_on_crash_var,
+            get_value=lambda: self._reconnect_timeout,
+            set_value=lambda v: setattr(self, "_reconnect_timeout", v),
+            minimum=3, maximum=20, suffix=" sec",
+        )
+
+        _param_row(
+            t("tab.parametres.short.title"),
+            t("tab.parametres.short.description"),
+            self.shorten_title_var,
+            on_change=apply_shorten_titles,
+        )
+
+        _param_row(
+            t("tab.parametres.update_check.title"),
+            t("tab.parametres.update_check.description"),
+            self.check_update_on_launch_var,
+            on_change=self._on_update_check_toggle,
+        )
+
+    # ------------------------------------------------------------------
+    # Réinitialisation
+    # ------------------------------------------------------------------
+
+    def _reset_config(self):
+        # ── Nettoyage registre ────────────────────────────────────────────────
         try:
-            import keyboard as _kb
-            if hasattr(self, "_spotlight_hotkey_ref") and self._spotlight_hotkey_ref:
-                try:
-                    _kb.remove_hotkey(self._spotlight_hotkey_ref)
-                except Exception:
-                    pass
-                self._spotlight_hotkey_ref = None
-            if self._shortcut_spotlight:
-                self._spotlight_hotkey_ref = _kb.add_hotkey(
-                    self._shortcut_spotlight, self._trigger_spotlight
-                )
-        except Exception:
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, _REG_PATH,
+                                 access=winreg.KEY_WRITE)
+            with key:
+                for name in build_config(None, None, None).keys():
+                    try:
+                        winreg.DeleteValue(key, name)
+                    except FileNotFoundError:
+                        pass
+        except FileNotFoundError:
             pass
+        # ── Reste de ton code existant ────────────────────────────────────────
+        self._shortcut_next     = None
+        self._shortcut_prev     = None
+        self._shortcut_back     = None
+        self._shortcut_main     = None
+        self._char_main         = None
+        self._char_skip_names   = set()
+        self._char_af_overrides = {}
+        self._welcome_shown     = False
 
-    def _trigger_spotlight(self):
-        """Appelé depuis le thread du hook clavier — on rebascule vers le thread Qt
-        avant d'ouvrir la fenêtre (obligatoire : une UI Qt ne peut pas être créée
-        depuis un autre thread que le thread principal)."""
-        enabled = getattr(self, "_mode_enabled", {}).get("spotlight", [True])
-        if not enabled[0]:
-            return
-        # Si l'overlay est déjà ouvert, c'est lui qui a le focus (plus Dofus) :
-        # on doit quand même laisser passer le raccourci pour pouvoir le
-        # refermer (toggle). is_dofus_foreground() ne sert de garde-fou que
-        # pour l'OUVERTURE d'un nouvel overlay.
-        overlay_open = getattr(self, "_spotlight_dialog", None) is not None
-        if not overlay_open and not is_dofus_foreground():
-            return
-        QMetaObject.invokeMethod(
-            self, "_open_spotlight_safe",
-            Qt.ConnectionType.QueuedConnection,
-        )
+        _unhook_all()
+        self._persist_config()
+        self._rebuild_char_list()
 
-    @pyqtSlot()
-    def _open_spotlight_safe(self):
-        open_spotlight(self)
-
-    # ------------------------------------------------------------------
-    # Mode Déplacement
-    # ------------------------------------------------------------------
-
-    def _build_mode_deplacement(self):
-
-        def _build_content(panel_layout: QVBoxLayout):
-            # Raccourci
-            self._move_shortcut_entry_mode = self._mode_shortcut_entry(
-                panel_layout, t("tab.outils.mode.move.raccourci"), self._shortcut_move, "move"
-            )
-            # Overlay (label à gauche, checkbox à droite)
-            self._mode_toggle_row(
-                panel_layout, t("tab.outils.mode.move.overlay"), self.move_overlay_var
-            )
-            # Délai de cycle — spinbox
-            self._move_delay_spinbox = self._mode_spinbox_row(
-                panel_layout,
-                label     = t("tab.outils.mode.move.ms"),
-                min_val   = 90,
-                max_val   = 300,
-                current   = self._move_cycle_delay_ms,
-                unit      = "ms",
-                on_change = self._set_move_cycle_delay,
-            )
-
-        self._build_mode_card(
-            mode_id          = "deplacement",
-            icon             = "🏃",
-            title            = t("tab.outils.mode.move.title"),
-            subtitle         = t("tab.outils.mode.move.description"),
-            is_active_fn     = lambda: self._move_manager.is_active,
-            toggle_fn        = self._toggle_move_mode,
-            build_content_fn = _build_content,
-        )
-
-    def _set_move_cycle_delay(self, val: int):
-        self._move_cycle_delay_ms = val
-        self._move_manager._CYCLE_DELAY_MS = val
-
-    def _set_no_shortcut_move(self):
-        """Efface le raccourci du mode déplacement et re-applique les hotkeys."""
-        self._shortcut_move = None
-        if hasattr(self, "_move_shortcut_entry_mode"):
-            self._move_shortcut_entry_mode.setText("Aucun")
-            self._move_shortcut_entry_mode.setStyleSheet(f"""
-                QLineEdit {{
-                    background-color: #252b3b;
-                    color: {self.GRAY};
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px;
-                }}
-            """)
-        self._apply_shortcuts()
-        # Plus besoin d'enregistrer le hotkey move — il a été retiré par _apply_shortcuts
-
-    def _toggle_move_mode(self, force: bool = False):
-        # Vérifier que la checkbox de permission est cochée (sauf si forcé, ex. Spotlight)
-        if not force:
-            enabled = getattr(self, "_mode_enabled", {}).get("deplacement", [True])
-            if not enabled[0]:
-                return
-        if not is_dofus_foreground():
-            return
-        self._move_manager.toggle()
-
-    # ------------------------------------------------------------------
-    # Surcharges de TabRaccourcisMixin — sans modifier UI_Tab_Raccourcis.py
-    # ------------------------------------------------------------------
-
-    def _start_capture_move(self, entry: QLineEdit):
-        """Capture de touche dédiée au raccourci du mode déplacement."""
-        from PyQt6.QtCore import QEvent, QObject
-        from PyQt6.QtGui import QKeySequence, QKeyEvent
-
-        entry.setText("Appuyez…")
-        entry.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: #252b3b;
-                color: {self.GRAY};
-                border: none;
-                border-radius: 4px;
-                padding: 4px;
-            }}
-        """)
-
-        def on_key(event: QKeyEvent):
-            mod_keys = {
-                Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt,
-                Qt.Key.Key_Meta, Qt.Key.Key_CapsLock,
-                Qt.Key.Key_Super_L, Qt.Key.Key_Super_R,
-            }
-            k = event.key()
-            if k in mod_keys:
-                return
-            mods = []
-            if event.modifiers() & Qt.KeyboardModifier.ControlModifier: mods.append("ctrl")
-            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:   mods.append("shift")
-            if event.modifiers() & Qt.KeyboardModifier.AltModifier:     mods.append("alt")
-            key_name = QKeySequence(k).toString().lower()
-            combo = "+".join(mods + [key_name]) if mods else key_name
-
-            self._shortcut_move = combo
-            entry.setText(combo)
-            entry.setStyleSheet(f"""
-                QLineEdit {{
-                    background-color: #252b3b;
-                    color: {self.ACCENT};
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px;
-                }}
-            """)
-            entry.removeEventFilter(self._move_capture_filter)
-            self._move_capture_filter = None
-            self.setFocus()
-            self._apply_shortcuts()
-            self._register_move_hotkey()
-
-        class _KeyFilter(QObject):
-            def __init__(self, cb):
-                super().__init__()
-                self._cb = cb
-            def eventFilter(self, obj, evt):
-                if evt.type() == QEvent.Type.KeyPress:
-                    self._cb(evt)
-                    return True
-                return False
-
-        self._move_capture_filter = _KeyFilter(on_key)
-        entry.installEventFilter(self._move_capture_filter)
-
-
-
-    def _register_move_hotkey(self):
-        """Enregistre (ou retire) le hotkey move indépendamment des autres raccourcis."""
-        if not KEYBOARD_OK:
-            return
-        try:
-            import keyboard as _kb
-            # Retirer uniquement le hook move s'il existe déjà
-            if hasattr(self, "_move_hotkey_ref") and self._move_hotkey_ref:
-                try:
-                    _kb.remove_hotkey(self._move_hotkey_ref)
-                except Exception:
-                    pass
-                self._move_hotkey_ref = None
-            if self._shortcut_move:
-                self._move_hotkey_ref = _kb.add_hotkey(
-                    self._shortcut_move, self._toggle_move_mode
-                )
-        except Exception:
-            pass
-
-    def _on_move_state_change(self, is_active: bool):
-        QMetaObject.invokeMethod(
-            self, "_apply_move_state",
-            Qt.ConnectionType.QueuedConnection,
-        )
-
-    @pyqtSlot()
-    def _apply_move_state(self):
-        if self._move_manager.is_active:
-            self._show_move_overlay()
-        else:
-            self._flash_move_overlay_off()
-
-    # ------------------------------------------------------------------
-    # Overlay flottant
-    # ------------------------------------------------------------------
-
-    def _show_move_overlay(self):
-        enabled = getattr(self, "_mode_enabled", {}).get("deplacement", [True])
-        if not enabled[0]:
-            return
-        if not self.move_overlay_var.get():
-            self._start_overlay_poll()
-            return
-        if self._move_overlay is None:
-            self._build_move_overlay()
-        self._move_overlay_label.setText("🏃 Mode déplacement")
-        self._move_overlay_label.setStyleSheet(
-            f"color: {self.GREEN}; background: transparent; font-weight: bold;")
-        self._move_overlay.setStyleSheet("background-color: #0d2918; border-radius: 6px;")
-        from PyQt6.QtWidgets import QApplication
-        screen = QApplication.primaryScreen().availableGeometry()
-        self._move_overlay.move(screen.right() - 230, screen.bottom() - 90)
-        self._move_overlay.show()
-        self._move_overlay.raise_()
-        self._start_overlay_poll()
-
-    def _flash_move_overlay_off(self):
-        if not self.move_overlay_var.get() or self._move_overlay is None:
-            return
-        self._move_overlay_label.setText("🧍 Mode déplacement")
-        self._move_overlay_label.setStyleSheet(
-            f"color: {self.RED}; background: transparent; font-weight: bold;")
-        self._move_overlay.setStyleSheet("background-color: #2d0f0f; border-radius: 6px;")
-        self._move_overlay.show()
-        QTimer.singleShot(1000, self._hide_move_overlay)
-
-    def _hide_move_overlay(self):
-        if self._move_overlay:
-            self._move_overlay.hide()
-
-    def _build_move_overlay(self):
-        from PyQt6.QtWidgets import QApplication
-        ov = QWidget(None, Qt.WindowType.Tool |
-                        Qt.WindowType.FramelessWindowHint |
-                        Qt.WindowType.WindowStaysOnTopHint)
-        ov.setStyleSheet("background-color: #0d2918; border-radius: 6px;")
-        ov.setFixedSize(210, 42)
-        ov.setWindowOpacity(0.90)
-
-        inner_layout = QHBoxLayout(ov)
-        inner_layout.setContentsMargins(14, 8, 14, 8)
-
-        lbl = QLabel("🏃 Mode déplacement")
-        lbl.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
-        lbl.setStyleSheet(f"color: {self.GREEN}; background: transparent;")
-        inner_layout.addWidget(lbl)
-
-        ov._drag_pos = None
-        def _press(e):
-            if e.button() == Qt.MouseButton.LeftButton:
-                ov._drag_pos = e.globalPosition().toPoint() - ov.frameGeometry().topLeft()
-        def _move(e):
-            if ov._drag_pos and e.buttons() == Qt.MouseButton.LeftButton:
-                ov.move(e.globalPosition().toPoint() - ov._drag_pos)
-        def _release(e):
-            ov._drag_pos = None
-
-        ov.mousePressEvent   = _press
-        ov.mouseMoveEvent    = _move
-        ov.mouseReleaseEvent = _release
-        lbl.mousePressEvent   = _press
-        lbl.mouseMoveEvent    = _move
-        lbl.mouseReleaseEvent = _release
-
-        self._move_overlay       = ov
-        self._move_overlay_label = lbl
-
-    def _start_overlay_poll(self):
-        if self._move_overlay and self._move_manager.is_active:
-            if is_dofus_foreground():
-                self._move_overlay.show()
-                self._move_overlay.raise_()
-            else:
-                self._move_overlay.hide()
-            QTimer.singleShot(250, self._start_overlay_poll)
-
-
-    # ------------------------------------------------------------------
-    # Mode Dradidas
-    # ------------------------------------------------------------------
-
-    def _build_mode_dradidas(self):
-
-        def _build_content(panel_layout: QVBoxLayout):
-            # Raccourci
-            self._dradidas_shortcut_entry_mode = self._mode_shortcut_entry(
-                panel_layout, t("tab.outils.mode.dradidas.raccourci"), self._shortcut_dradidas, "dradidas"
-            )
-
-            # Nombre de tours
-            self._dradidas_turns_spinbox = self._mode_spinbox_row(
-                panel_layout,
-                label     = t("tab.outils.mode.dradidas.tours"),
-                min_val   = 2,
-                max_val   = 4,
-                current   = self._dradidas_turns,
-                unit      = "tours",
-                on_change = self._set_dradidas_turns,
-            )
-
-            # En-tête
-            lbl_sadidas = QLabel(t("tab.outils.mode.dradidas.personnages"))
-            lbl_sadidas.setFont(self.S.Info.font)
-            lbl_sadidas.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
-            panel_layout.addWidget(lbl_sadidas)
-
-            # Container de la liste
-            self._dradidas_chars_container = QWidget()
-            self._dradidas_chars_container.setStyleSheet("background: transparent;")
-            self._dradidas_chars_layout = QVBoxLayout(self._dradidas_chars_container)
-            self._dradidas_chars_layout.setContentsMargins(0, 0, 0, 0)
-            self._dradidas_chars_layout.setSpacing(4)
-            panel_layout.addWidget(self._dradidas_chars_container)
-
-            self._rebuild_dradidas_char_list()
-
-        self._build_mode_card(
-            mode_id          = "dradidas",
-            icon             = "🌿",
-            title            = t("tab.outils.mode.dradidas.title"),
-            subtitle         = t("tab.outils.mode.dradidas.description"),
-            is_active_fn     = lambda: False,   # ce mode n'a pas d'état actif/inactif — juste un raccourci
-            toggle_fn        = lambda: None,
-            build_content_fn = _build_content,
-        )
-
-    def _set_dradidas_turns(self, val: int):
-        self._dradidas_turns = val
-        self._dradidas_manager.turns = val
-
-    def _set_no_shortcut_dradidas(self):
-        self._shortcut_dradidas = None
-        if hasattr(self, "_dradidas_shortcut_entry_mode"):
-            self._dradidas_shortcut_entry_mode.setText("Aucun")
-            self._dradidas_shortcut_entry_mode.setStyleSheet(f"""
-                QLineEdit {{
-                    background-color: #252b3b;
-                    color: {self.GRAY};
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px;
-                }}
-            """)
-        self._apply_shortcuts()
-        self._register_dradidas_hotkey()
-
-    def _start_capture_dradidas(self, entry: QLineEdit):
-        """Capture de touche dédiée au raccourci du mode Dradidas (Puissance Sylvestre)."""
-        entry.setText("Appuyez…")
-        entry.setStyleSheet(f"""
-            QLineEdit {{
-                background-color: #252b3b;
-                color: {self.GRAY};
-                border: none;
-                border-radius: 4px;
-                padding: 4px;
-            }}
-        """)
-
-        def on_key(event: QKeyEvent):
-            mod_keys = {
-                Qt.Key.Key_Control, Qt.Key.Key_Shift, Qt.Key.Key_Alt,
-                Qt.Key.Key_Meta, Qt.Key.Key_CapsLock,
-                Qt.Key.Key_Super_L, Qt.Key.Key_Super_R,
-            }
-            k = event.key()
-            if k in mod_keys:
-                return
-            mods = []
-            if event.modifiers() & Qt.KeyboardModifier.ControlModifier: mods.append("ctrl")
-            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:   mods.append("shift")
-            if event.modifiers() & Qt.KeyboardModifier.AltModifier:     mods.append("alt")
-            key_name = QKeySequence(k).toString().lower()
-            combo = "+".join(mods + [key_name]) if mods else key_name
-
-            self._shortcut_dradidas = combo
-            entry.setText(combo)
-            entry.setStyleSheet(f"""
-                QLineEdit {{
-                    background-color: #252b3b;
-                    color: {self.ACCENT};
-                    border: none;
-                    border-radius: 4px;
-                    padding: 4px;
-                }}
-            """)
-            entry.removeEventFilter(self._dradidas_capture_filter)
-            self._dradidas_capture_filter = None
-            self.setFocus()
-            self._apply_shortcuts()
-            self._register_dradidas_hotkey()
-
-        class _KeyFilter(QObject):
-            def __init__(self, cb):
-                super().__init__()
-                self._cb = cb
-            def eventFilter(self, obj, evt):
-                if evt.type() == QEvent.Type.KeyPress:
-                    self._cb(evt)
-                    return True
-                return False
-
-        self._dradidas_capture_filter = _KeyFilter(on_key)
-        entry.installEventFilter(self._dradidas_capture_filter)
-
-    def _register_dradidas_hotkey(self):
-        """Enregistre (ou retire) le hotkey Dradidas indépendamment des autres raccourcis."""
-        if not KEYBOARD_OK:
-            return
-        try:
-            import keyboard as _kb
-            if hasattr(self, "_dradidas_hotkey_ref") and self._dradidas_hotkey_ref:
-                try:
-                    _kb.remove_hotkey(self._dradidas_hotkey_ref)
-                except Exception:
-                    pass
-                self._dradidas_hotkey_ref = None
-            if self._shortcut_dradidas:
-                self._dradidas_hotkey_ref = _kb.add_hotkey(
-                    self._shortcut_dradidas, self._trigger_dradidas
-                )
-        except Exception:
-            pass
-
-    def _trigger_dradidas(self, force: bool = False):
-        """Appelé quand le raccourci Puissance Sylvestre est pressé.
-        Lit le pseudo de la fenêtre Dofus active et déclenche le compteur Dradidas.
-        """
-        if not force:
-            enabled = getattr(self, "_mode_enabled", {}).get("dradidas", [True])
-            if not enabled[0]:
-                return
-        if not is_dofus_foreground():
-            return
-        try:
-            import win32gui
-            hwnd  = win32gui.GetForegroundWindow()
-            title = win32gui.GetWindowText(hwnd)
-            pseudo = extract_pseudo_from_title(title, hwnd)
-            if pseudo and (force or self._dradidas_manager.is_sadida(pseudo)):
-                self._dradidas_manager.trigger(pseudo, force=force)
-                remaining = self._dradidas_manager.get_skip_remaining(pseudo)
-                tours = "tour" if remaining <= 1 else "tours"
-                self.log_msg(
-                    f"🌿 [DRADIDAS] {pseudo} — Puissance Sylvestre activée"
-                    f" ({remaining} {tours} ignorés)",
-                    "ok"
-                )
-            elif pseudo:
-                self.log_msg(
-                    f"🌿 [DRADIDAS] {pseudo} — non marqué comme Sadida", "dim"
-                )
-        except Exception:
-            pass
-        
-    def _rebuild_dradidas_char_list(self):
-        """Reconstruit la liste des personnages détectés avec cases à cocher Sadida."""
-        # Vider le container
-        for i in reversed(range(self._dradidas_chars_layout.count())):
-            w = self._dradidas_chars_layout.itemAt(i).widget()
-            if w:
-                w.deleteLater()
-
-        if not self._char_order:
-            lbl = QLabel(t("tab.outils.mode.dradidas.notfound"))
-            lbl.setFont(self.S.Info.font)
-            lbl.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
-            self._dradidas_chars_layout.addWidget(lbl)
-            return
-
-        for _, pseudo in self._char_order:
-            self._create_dradidas_char_row(pseudo)
-
-    def _create_dradidas_char_row(self, pseudo: str):
-        """Ligne personnage : nom à gauche, case Sadida à droite."""
-        is_sadida = self._dradidas_manager.is_sadida(pseudo)
-
-        row = QWidget()
-        row.setStyleSheet(f"background-color: {self.CARD}; border-radius: 4px;")
-        row.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(10, 6, 10, 6)
-        row_layout.setSpacing(8)
-
-        lbl_name = QLabel(pseudo)
-        lbl_name.setFont(self.S.Bouton.font_principal)
-        lbl_name.setStyleSheet(f"color: {self.TEXT}; background: transparent;")
-        row_layout.addWidget(lbl_name, stretch=1)
-
-        # Badge tours restants
-        remaining = self._dradidas_manager.get_skip_remaining(pseudo)
-        lbl_badge = QLabel(
-            f"⏸ {remaining} tour{'s' if remaining > 1 else ''}" if remaining > 0 else ""
-        )
-        lbl_badge.setFont(self.S.Info.font)
-        lbl_badge.setStyleSheet(
-            f"color: {self.GREEN}; background: transparent;" if remaining > 0
-            else f"color: transparent; background: transparent;"
-        )
-        row_layout.addWidget(lbl_badge)
-        row._badge = lbl_badge  # ref pour _refresh_dradidas_badges
-
-        # Case à cocher Sadida
-        cb = QLabel("🌿" if is_sadida else "○")
-        cb.setFont(QFont("Segoe UI", 13))
-        cb.setStyleSheet(
-            f"color: {self.GREEN}; background: transparent;" if is_sadida
-            else f"color: {self.GRAY}; background: transparent;"
-        )
-        row_layout.addWidget(cb)
-
-        def _toggle(event=None, p=pseudo, c=cb):
-            if self._dradidas_manager.is_sadida(p):
-                new_set = self._dradidas_manager.sadida_pseudos - {p}
-            else:
-                new_set = self._dradidas_manager.sadida_pseudos | {p}
-            self._dradidas_manager.set_sadidas(new_set)
-            self._dradidas_turns = self._dradidas_manager.turns
-            self._persist_config()
-            # Mettre à jour la case visuellement
-            is_now = self._dradidas_manager.is_sadida(p)
-            c.setText("🌿" if is_now else "○")
-            c.setStyleSheet(
-                f"color: {self.GREEN}; background: transparent;" if is_now
-                else f"color: {self.GRAY}; background: transparent;"
-            )
-
-        for w in [row, lbl_name, cb]:
-            w.mousePressEvent = _toggle
-
-        self._dradidas_chars_layout.addWidget(row)
-
-    def _refresh_dradidas_badges(self):
-        if not hasattr(self, "_dradidas_chars_layout"):
-            return
-        for i in range(self._dradidas_chars_layout.count()):
-            row = self._dradidas_chars_layout.itemAt(i).widget()
-            if row is None:
+        for entry in [
+            getattr(self, '_next_entry', None),
+            getattr(self, '_prev_entry', None),
+            getattr(self, '_back_entry', None),
+            getattr(self, '_main_entry', None),
+        ]:
+            if entry is None:
                 continue
-            badge = getattr(row, "_badge", None)
-            if badge is None:
-                continue
-            # Retrouver le pseudo depuis le label nom (premier QLabel du row)
-            lbl_name = row.findChild(QLabel)
-            if lbl_name is None:
-                continue
-            pseudo = lbl_name.text()
-            remaining = self._dradidas_manager.get_skip_remaining(pseudo)
-            if remaining > 0:
-                badge.setText(f"⏸ {remaining} tour{'s' if remaining > 1 else ''}")
-                badge.setStyleSheet(f"color: {self.GREEN}; background: transparent;")
-            else:
-                badge.setText("")
-                badge.setStyleSheet("color: transparent; background: transparent;")
+            try:
+                entry.setText("Aucun")
+                entry.setStyleSheet(entry.styleSheet().replace(
+                    f"color: {self.ACCENT}", f"color: {self.GRAY}"
+                ))
+            except Exception:
+                pass
+
+        self.log_msg("Paramètres réinitialisés.", "ok")
