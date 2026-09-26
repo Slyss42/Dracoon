@@ -50,12 +50,14 @@ class DradidasManager:
 
     # ── Contrôle du compteur ──────────────────────────────────────────────────
 
-    def trigger(self, pseudo: str):
+    def trigger(self, pseudo: str, force: bool = False):
         """Démarre ou remet à zéro le compteur pour ce pseudo.
         Idempotent : si déjà actif, remet exactement à _turns (sans dépasser).
-        Ne fait rien si le pseudo n'est pas dans la liste Sadida.
+        Ne fait rien si le pseudo n'est pas dans la liste Sadida, sauf si
+        force=True (réservé au déclenchement via le Spotlight, qui agit
+        sur le compte au premier plan sans se soucier du tag Sadida).
         """
-        if pseudo in self._sadida_pseudos:
+        if force or pseudo in self._sadida_pseudos:
             self._skip_counts[pseudo] = self._turns
 
     def should_skip_combat(self, pseudo: str) -> tuple[bool, int]:
