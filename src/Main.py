@@ -28,8 +28,9 @@ from core.config import (
     _decode_af_overrides, _decode_char_icons, setup_file_logger,
 )
 from core.dradidasmode import DradidasManager
+from core.movemode import MoveModeManager
 from core.shortcuts import _unhook_all, CtrlShiftManager, _release_modifier_keys
-from core.windows import unlock_foreground_switching, restore_foreground_lock
+from core.windows import unlock_foreground_switching, restore_foreground_lock, is_dofus_foreground
 from core.icons import restore_all_original_icons, set_window_icon
 from core.i18n import t
 from core.single_instance import acquire_single_instance
@@ -43,6 +44,7 @@ from UI_Tab_Outils       import TabOutilsMixin
 from UI_Tab_Parametres   import TabParametresMixin
 from UI_Tab_Infos        import TabInfosMixin
 from UI_UpdatePopup      import UpdatePopupMixin #supprimer si offline
+from UI_Spotlight        import open_spotlight
 
 try:
     import pystray
@@ -228,6 +230,11 @@ class App(
         self._tray_thread   = None
         self._window_snapshot: dict[int, str] = {}
 
+        self._window_snapshot: dict[int, str] = {}
+        self._launch_tracking: dict[int, dict] = {}   # hwnd -> {"since": float, "retries": int}  ← nouveau
+        self._ever_loaded: set[int] = set()            # ← nouveau
+        self._retry_exhausted: set[int] = set()        # ← nouveau
+
         raw_next = cfg.get("shortcut_next", "ctrl+right")
         raw_prev = cfg.get("shortcut_prev", "ctrl+left")
         raw_back = cfg.get("shortcut_back", None)
@@ -244,6 +251,11 @@ class App(
         self._shortcut_dradidas: str | None = cfg.get("shortcut_dradidas", None)
         self._dradidas_enabled: bool = cfg.get("dradidas_enabled", "1") == "1"
         self._dradidas_turns: int = int(cfg.get("dradidas_turns") or 3)
+        
+        self._shortcut_spotlight: str | None = cfg.get("shortcut_spotlight", None)
+        self._spotlight_enabled: bool = cfg.get("spotlight_enabled", "1") == "1"
+        self._spotlight_hotkey_ref = None
+        QTimer.singleShot(500, self._register_spotlight_hotkey)
 
         self._shortcut_ctrl_shift: str | None = cfg.get("shortcut_ctrl_shift", None)
         self._ctrl_shift_manager = CtrlShiftManager()
@@ -259,6 +271,32 @@ class App(
 
         self._dradidas_manager = DradidasManager(turns=self._dradidas_turns)
         self._dradidas_manager.set_sadidas(_sadidas_set)
+
+        # --- Cases de permission (☑/☐) des modes : préremplies avec l'état
+        #     persisté, pour que _toggle_move_mode / _trigger_dradidas
+        #     respectent le réglage sauvegardé même avant l'ouverture de
+        #     l'onglet Outils (sinon le fallback par défaut est "activé"). ---
+        self._mode_enabled = {
+            "deplacement": [self._move_enabled],
+            "dradidas":    [self._dradidas_enabled],
+            "spotlight":   [self._spotlight_enabled],
+        }
+
+        # --- Mode déplacement : manager + overlay + hotkey ---
+        # (déplacé ici depuis UI_Tab_Outils._build_tab_outils pour être actif
+        #  dès le lancement, sans dépendre de l'ouverture de l'onglet Outils)
+        self._move_overlay = None
+        self._move_manager = MoveModeManager(
+            cycle_fn        = self._cycle_next,
+            is_dofus_fg_fn  = is_dofus_foreground,
+            on_state_change = self._on_move_state_change,
+        )
+        self._move_hotkey_ref = None
+        QTimer.singleShot(500, self._register_move_hotkey)
+
+        # --- Mode Dradidas : hotkey (le manager est déjà créé ci-dessus) ---
+        self._dradidas_hotkey_ref = None
+        QTimer.singleShot(500, self._register_dradidas_hotkey)
 
         _raw_main = cfg.get("char_main", "") or None
         self._char_main: str | None = _raw_main
@@ -287,6 +325,8 @@ class App(
         self.move_overlay_var       = BoolVar(cfg.get("move_overlay",       "1") == "1")
         self.shorten_title_var      = BoolVar(cfg.get("shorten_title",      "0") == "1")
         self.check_update_on_launch_var = BoolVar(cfg.get("check_update_on_launch", "1") == "1")
+        self.reconnect_on_crash_var     = BoolVar(cfg.get("reconnect_on_crash",     "1") == "1")
+        self._reconnect_timeout: int    = int(cfg.get("reconnect_timeout") or 6)
         self.debug_var              = BoolVar(False)
         _t("init variables / config")
 
@@ -712,6 +752,19 @@ class App(
             self._tray_icon = None
         QTimer.singleShot(0, self._quit)
 
+    def _ensure_visible(self):
+        """Réaffiche Dracoon au premier plan, qu'elle soit planquée dans le
+        tray système ou simplement minimisée. Utilisé notamment par le
+        Spotlight lors d'une navigation, pour que "Ouvrir Info" par exemple
+        montre effectivement quelque chose."""
+        if getattr(self, "_tray_icon", None):
+            self._tray_show()   # coupe l'icône tray + show/raise déjà géré dedans
+        if self.isMinimized():
+            self.showNormal()
+        self.show()
+        self.raise_()
+        self.activateWindow()
+
     # ------------------------------------------------------------------
     # Construction de l'UI principale (header + onglets)
     # ------------------------------------------------------------------
@@ -957,10 +1010,16 @@ class App(
             dradidas_sadidas   = self._dradidas_manager.sadida_pseudos,
             shortcut_dradidas  = self._shortcut_dradidas,
             shortcut_ctrl_shift = self._shortcut_ctrl_shift,
+            shortcut_spotlight  = self._shortcut_spotlight,
+            spotlight_enabled   = self._spotlight_enabled,
             lang                = self._lang,
             shorten_title       = self.shorten_title_var.get(),
             char_icons          = self._char_icons,
             check_update_on_launch = self.check_update_on_launch_var.get(),
+            reconnect_on_crash     = self.reconnect_on_crash_var.get(),
+            reconnect_timeout      = self._reconnect_timeout,
+
+
         ))
 
     def _set_lang(self, lang: str):
