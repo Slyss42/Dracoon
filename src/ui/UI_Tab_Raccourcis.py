@@ -105,12 +105,12 @@ class TabRaccourcisMixin:
             warn_layout.setContentsMargins(12, 10, 12, 10)
             warn_layout.setSpacing(4)
 
-            lbl_warn_titre = QLabel("⚠  Module 'keyboard' non chargé")
+            lbl_warn_titre = QLabel(t("tab.raccourcis.keyboard_missing.title"))
             lbl_warn_titre.setFont(QFont("Segoe UI", 10, QFont.Weight.Bold))
             lbl_warn_titre.setStyleSheet("color: %s; background: transparent;" % self.RED)
             warn_layout.addWidget(lbl_warn_titre)
 
-            lbl_warn_sub = QLabel("pip install keyboard  (nécessite droits admin pour les hotkeys globaux)")
+            lbl_warn_sub = QLabel(t("tab.raccourcis.keyboard_missing.hint"))
             lbl_warn_sub.setFont(QFont("Consolas", 9))
             lbl_warn_sub.setStyleSheet(f"color: {self.GRAY}; background: transparent;")
             warn_layout.addWidget(lbl_warn_sub)
@@ -233,7 +233,7 @@ class TabRaccourcisMixin:
     # ------------------------------------------------------------------
 
     def _start_capture(self, entry: QLineEdit, which: str):
-        entry.setText("Appuyez…")
+        entry.setText(t("shortcut.press"))
         entry.setStyleSheet(entry.styleSheet().replace(
             f"color: {self.ACCENT}", f"color: {self.GRAY}"
         ))
@@ -341,6 +341,13 @@ class TabRaccourcisMixin:
                 keyboard.add_hotkey(self._shortcut_main, self._safe_hotkey(self._focus_main, "main"), suppress=True)
             if self._shortcut_ctrl_shift:
                 keyboard.add_hotkey(self._shortcut_ctrl_shift, self._safe_hotkey(self._toggle_ctrl_shift, "ctrl_shift"), suppress=True)
+            # Les hotkeys des outils ne sont pas gérés ici, mais _unhook_all()
+            # vient de les effacer : on les réenregistre.
+            for fn in ("_register_spotlight_hotkey", "_register_move_hotkey",
+                        "_register_dradidas_hotkey", "_register_easyconome_hotkey"):
+                reg = getattr(self, fn, None)
+                if reg:
+                    reg()
             self._persist_config()
         except Exception as e:
             if not silent:
