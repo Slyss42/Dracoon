@@ -17,7 +17,7 @@ import winreg
 # ─── Type build ─────────────────────────────────────────────────────────
 APP_UPDATE_MODE = "onefile"  # ou "onedir" ou "onefile" — à changer manuellement selon le build (voir README_UPDATER.md §5)
 # ─── Onglet Info ─────────────────────────────────────────────────────────
-APP_VERSION = "4.0.5"
+APP_VERSION = "4.0.10"
 APP_GITHUB  = "https://github.com/Slyss42/Dracoon"
 APP_TWITTER = "https://x.com/Slyss42"
 
@@ -279,7 +279,8 @@ def build_config(shortcut_next, shortcut_prev, shortcut_back,
                   dradidas_enabled=True, dradidas_turns=3, dradidas_sadidas=None, shortcut_dradidas=None, shortcut_ctrl_shift=None, lang="fr",shorten_title=False, char_icons=None,
                   check_update_on_launch=True, shortcut_spotlight=None,
                   spotlight_enabled=True,
-                  reconnect_on_crash=True, reconnect_timeout=6) -> dict:
+                  reconnect_on_crash=True, reconnect_timeout=6,
+                  easyconome_data=None, shortcut_easyconome=None, easyconome_enabled=True) -> dict:
                  
     return {
         "shortcut_next":     shortcut_next,
@@ -309,7 +310,10 @@ def build_config(shortcut_next, shortcut_prev, shortcut_back,
         "char_icons":    _encode_char_icons(char_icons or {}),
         "check_update_on_launch": "1" if check_update_on_launch else "0",
         "reconnect_on_crash": "1" if reconnect_on_crash else "0",
-        "reconnect_timeout":  str(reconnect_timeout)
+        "reconnect_timeout":  str(reconnect_timeout),
+        "easyconome_data":     easyconome_data or "",
+        "shortcut_easyconome": shortcut_easyconome,
+        "easyconome_enabled":  "1" if easyconome_enabled else "0",
     }
 
 def load_config() -> dict:
