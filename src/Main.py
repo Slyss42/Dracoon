@@ -28,6 +28,7 @@ from core.config import (
     _decode_af_overrides, _decode_char_icons, setup_file_logger,
 )
 from core.dradidasmode import DradidasManager
+from core.easyconome import class_from_portrait, decode_data, encode_data
 from core.movemode import MoveModeManager
 from core.shortcuts import _unhook_all, CtrlShiftManager, _release_modifier_keys
 from core.windows import unlock_foreground_switching, restore_foreground_lock, is_dofus_foreground
@@ -35,6 +36,7 @@ from core.icons import restore_all_original_icons, set_window_icon
 from core.i18n import t
 from core.single_instance import acquire_single_instance
 from core.reg_migration import migrate_registry_if_needed
+
 
 from ui.theme import BoolVar, Styles, Palette
 
@@ -45,6 +47,7 @@ from UI_Tab_Parametres   import TabParametresMixin
 from UI_Tab_Infos        import TabInfosMixin
 from UI_UpdatePopup      import UpdatePopupMixin #supprimer si offline
 from UI_Spotlight        import open_spotlight
+from UI_Easyconome       import EasyconomeManager
 
 try:
     import pystray
@@ -257,6 +260,9 @@ class App(
         self._spotlight_hotkey_ref = None
         QTimer.singleShot(500, self._register_spotlight_hotkey)
 
+        self._shortcut_easyconome: str | None = cfg.get("shortcut_easyconome", None)
+        self._easyconome_enabled: bool = cfg.get("easyconome_enabled", "1") == "1"
+
         self._shortcut_ctrl_shift: str | None = cfg.get("shortcut_ctrl_shift", None)
         self._ctrl_shift_manager = CtrlShiftManager()
         self._shortcut_queue = queue.SimpleQueue()
@@ -280,6 +286,7 @@ class App(
             "deplacement": [self._move_enabled],
             "dradidas":    [self._dradidas_enabled],
             "spotlight":   [self._spotlight_enabled],
+            "easyconome":  [self._easyconome_enabled],
         }
 
         # --- Mode déplacement : manager + overlay + hotkey ---
@@ -317,6 +324,21 @@ class App(
             cfg.get("char_icons", "")
         )
         # {pseudo: {"color": "e05252"|None, "portrait": "iop_f"|None}}    
+
+        self._easyconome_data = decode_data(cfg.get("easyconome_data"))
+        self._econome = EasyconomeManager(
+            # fenêtres « Chargement… » exclues (même pseudo factice pour plusieurs fenêtres)
+            get_roster = lambda: [(h, p) for h, p in self._char_order
+                                  if p != t("tab.personnages.loading")],
+            class_of   = lambda p: class_from_portrait((self._char_icons.get(p) or {}).get("portrait")),
+            data       = self._easyconome_data,
+            on_persist = self._persist_config,
+            visible_when = is_dofus_foreground,
+        )
+        if not self._econome.catalog.has_files:
+            self._logger.warning("Easyconome : aucune icône de sort trouvée, placeholders utilisés")
+        self._easyconome_hotkey_ref = None
+        QTimer.singleShot(500, self._register_easyconome_hotkey)
 
         self._welcome_shown: bool = cfg.get("welcome_shown", "0") == "1"
 
@@ -392,6 +414,7 @@ class App(
     # ------------------------------------------------------------------
 
     def _quit(self):
+        self._econome.shutdown()
 
         if self.shorten_title_var.get():
             from core.windows import apply_shorten_titles
@@ -966,7 +989,7 @@ class App(
             import traceback
             traceback.print_exc()
             from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.critical(self, "Erreur onglet", f"{key} :\n{e}")
+            QMessageBox.critical(self, t("app.tab_error"), f"{key} :\n{e}")
             return
         for k, btn in self._tab_btns.items():
             btn.setStyleSheet(self._tab_btn_style(active=(k == key)))
@@ -1018,6 +1041,9 @@ class App(
             check_update_on_launch = self.check_update_on_launch_var.get(),
             reconnect_on_crash     = self.reconnect_on_crash_var.get(),
             reconnect_timeout      = self._reconnect_timeout,
+            easyconome_data        = encode_data(self._easyconome_data),
+            shortcut_easyconome    = self._shortcut_easyconome,
+            easyconome_enabled     = self._easyconome_enabled,
 
 
         ))
