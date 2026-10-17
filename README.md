@@ -64,6 +64,7 @@ PyInstaller --onefile --noconsole --clean ^
 --add-data "%SRC_PATH%\src\ressources\icon.ico;ressources" ^
 --add-data "%SRC_PATH%\src\ressources\i18n.json;ressources" ^
 --add-data "%SRC_PATH%\src\ressources\portraits;portraits" ^
+--add-data "%SRC_PATH%\src\ressources\spells;ressources\spells" ^
 --add-binary "CHEMIN\VERS\UPDATER\Dracoon-updater.exe;." ^
 --paths "%SRC_PATH%\src" ^
 --paths "%SRC_PATH%\src\ui" ^
