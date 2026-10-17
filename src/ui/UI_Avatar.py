@@ -49,7 +49,7 @@ class AvatarMixin:
         btn = QPushButton()
         btn.setFixedSize(SIZE, SIZE)
         btn.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
-        btn.setToolTip("✏  Personnaliser l'icône")
+        btn.setToolTip(t("avatar.tooltip"))
         btn.setFlat(True)
         self._style_avatar_btn(btn, color, portrait, SIZE)
 
@@ -112,7 +112,7 @@ class AvatarMixin:
         sel_portrait = [cfg.get("portrait")]
 
         dlg = QDialog(self)
-        dlg.setWindowTitle(f"{pseudo}  —  Personnaliser")
+        dlg.setWindowTitle(t("avatar.title").format(pseudo=pseudo))
         dlg.setModal(True)
         dlg.setFixedWidth(420)
         dlg.setStyleSheet(f"""
@@ -129,13 +129,13 @@ class AvatarMixin:
         dlg_layout.setSpacing(14)
 
         # ── Titre ────────────────────────────────────────────────────
-        lbl_title = QLabel(f"{pseudo}  —  Personnaliser")
+        lbl_title = QLabel(t("avatar.title").format(pseudo=pseudo))
         lbl_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         lbl_title.setStyleSheet(f"color: {self.TEXT};")
         dlg_layout.addWidget(lbl_title)
 
         # ── Section Couleur ──────────────────────────────────────────
-        lbl_color = QLabel("Couleur")
+        lbl_color = QLabel(t("avatar.color"))
         lbl_color.setFont(QFont("Segoe UI", 10))
         lbl_color.setStyleSheet(f"color: {self.GRAY};")
         dlg_layout.addWidget(lbl_color)
@@ -212,7 +212,7 @@ class AvatarMixin:
         dlg_layout.addWidget(color_row)
 
         # ── Section Portrait ─────────────────────────────────────────
-        lbl_portrait = QLabel("Icône")
+        lbl_portrait = QLabel(t("avatar.icon"))
         lbl_portrait.setFont(QFont("Segoe UI", 10))
         lbl_portrait.setStyleSheet(f"color: {self.GRAY};")
         dlg_layout.addWidget(lbl_portrait)
@@ -327,7 +327,7 @@ class AvatarMixin:
 
         prev_layout.addStretch()
 
-        lbl_prev_label = QLabel("Aperçu :")
+        lbl_prev_label = QLabel(t("avatar.preview"))
         lbl_prev_label.setFont(QFont("Segoe UI", 10))
         lbl_prev_label.setStyleSheet(f"color: {self.GRAY};")
         prev_layout.addWidget(lbl_prev_label)
@@ -390,7 +390,7 @@ class AvatarMixin:
         btn_row_layout.setSpacing(8)
         btn_row_layout.addStretch()
 
-        btn_reset = QPushButton("Réinitialiser")
+        btn_reset = QPushButton(t("avatar.reset"))
         btn_reset.setFont(self.S.Bouton.font_petit)
         btn_reset.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn_reset.setFlat(True)
@@ -415,7 +415,7 @@ class AvatarMixin:
         btn_reset.clicked.connect(_do_reset)
         btn_row_layout.addWidget(btn_reset)
 
-        btn_cancel = QPushButton("Annuler")
+        btn_cancel = QPushButton(t("avatar.cancel"))
         btn_cancel.setFont(self.S.Bouton.font_petit)
         btn_cancel.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn_cancel.setFlat(True)
@@ -432,7 +432,7 @@ class AvatarMixin:
         btn_cancel.clicked.connect(dlg.reject)
         btn_row_layout.addWidget(btn_cancel)
 
-        btn_ok = QPushButton("Appliquer")
+        btn_ok = QPushButton(t("avatar.apply"))
         btn_ok.setFont(self.S.Bouton.font_petit)
         btn_ok.setCursor(QCursor(Qt.CursorShape.PointingHandCursor))
         btn_ok.setStyleSheet(f"""
