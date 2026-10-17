@@ -251,6 +251,22 @@ def build_commands(app):
         "category": "actions",
     })
 
+    
+    # --- Easyconome : lance / ferme l'overlay (respecte la case ☑ du mode) ---
+    commands.append({
+        "id": "easyconome_toggle",
+        "label": t("spotlight.cmd.easyconome_activate"),   # fallback recherche
+        "label_fn": lambda: (
+            t("spotlight.cmd.easyconome_deactivate") if app._econome.running
+            else t("spotlight.cmd.easyconome_activate")
+        ),
+        "type": "action",
+        "run": lambda: app._trigger_easyconome(force=True),
+        "get_state": lambda: app._econome.running,
+        "keywords": ["easyconome", "économe", "econome", "challenge", "sorts", "spells"],
+        "category": "actions",
+    })
+
     # --- Presets de team (une commande par preset existant) ---
     for preset_name in load_order_presets().keys():
         commands.append({
