@@ -43,7 +43,7 @@ Prérequis :
 * Python 3.10 minimum [(site officiel)](https://www.python.org/downloads/)
 * Installer les dépendances : (ouvrir l'invite de commande, copier/coller le texte ci-dessous, puis presser enter)
 ``` 
-pip install pywin32 winsdk keyboard pystray Pillow psutil pyinstaller
+pip install pywin32 winsdk keyboard pystray Pillow psutil pyinstaller distro
 ```
 * Lancement pour test : (ouvrir l'invite de commande aller jusqu'au dossier ou se trouve le script et taper "python Dracoon.pyw"). OU : taper "python" et glisser le UI.py dans l'invite de commande + presser enter
 ```
